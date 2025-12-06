@@ -1,0 +1,657 @@
+---
+title: "S05_G7"
+format: html
+editor: visual
+---
+
+# Paquetes para visualizar datos
+
+```{r}
+install.packages("gridExtra")
+```
+
+```{r}
+library(tidyverse)
+library(rio)
+library(here)
+library(gridExtra) ## Para múltiple gráficos en una sola página
+library(GGally) ## Para gráficos de correlación
+library(forcats)
+```
+
+# Cargando los datos
+
+```{r}
+data_covid_19_diabetes_0 <- import (here("covid_19_diabetes.csv"))
+```
+
+## Examinamos los datos
+
+`str()` es la función para ver la estructura de los datos.
+
+```{r}
+str(data_covid_19_diabetes_0)
+```
+
+## Conversión de caracteres a factor (categóricos) usando la función `mutate_if()`
+
+Las variables categórica han sido importadas como caracteres. Necesitamos transformalo a factores. En RStudio, factores es el tipo de dato para trabajar con variables categóricas.
+
+```{r}
+data_covid_19_diabetes <- data_covid_19_diabetes_0 |> 
+  mutate_if(is.character, as.factor)
+str(data_covid_19_diabetes)
+```
+
+# Visualizando datos: el molde
+
+Para realizar visualizaciones con el paquete ggplot2, debemos reemplazar lo que esta encerrado en los signos. Este es el molde fundamental para crear gráficos más complejos.
+
+`<midata> |> ggplot(aes(x = <var1>, y = <var2>)) + geom_<xxxx>()`
+
+-   <midata> : el nombre del dataset a utilizar.
+-   \|\> : esto es llamado "pipe", la cual conecta los datos a la función ggplot
+-   \+ : usa + par conectar declaraciones de ggplot
+-   <var> : la variable, cuyos datos serán usados para crear el gráfico.
+-   geom\_<xxxx>: indica la función para crear el tipo de gráfico. Ej. geom_bar, para crear gráficos de barra.
+
+# Visualizando distribución de datos
+
+# 1. Visualizando datos categóricos
+
+Gráficos de barra Los gráficos de barra son adecuados para mostrar frecuencias de variables categóricas.
+
+```{r}
+data_covid_19_diabetes|>  
+  ggplot(aes(x = enfer_cardiovascular)) +
+  geom_bar()
+```
+
+```{r}
+data_covid_19_diabetes|>  
+  ggplot(aes(x = edad)) +
+  geom_bar()
+```
+
+Aquí, añadimos la función `fct_infreq()` de paquete forcats para ordenar (en orden decreciente) las barras del conteo
+
+```{r}
+data_covid_19_diabetes |>  
+  ggplot(aes(x = fct_infreq(enfer_cardiovascular))) +
+  geom_bar()
+```
+
+```{r}
+data_covid_19_diabetes |>  
+  ggplot(aes(x = fct_infreq(edad))) +
+  geom_bar()
+```
+
+Con la función `labs()` podemos añadir nombres a los ejes del gráficos.
+
+```{r}
+data_covid_19_diabetes |>  
+  ggplot(aes(x = fct_infreq(edad))) +
+  geom_bar() +
+  labs(y = "Frecuencia", x = "Edad")
+```
+
+```{r}
+data_covid_19_diabetes |>  
+  ggplot(aes(x = fct_infreq(enfer_cardiovascular))) +
+  geom_bar() +
+  labs(y = "Frecuencia", x = "Enfermedad Cardiovascular")
+```
+
+Para el gráfico de barra podemos usar frecuencias relativas. Por ejemplo, un gráfico de barras que muestre proporciones. Aquí es necesario calcular las proporciones. Nota que seguida a `y =` se muestra el cálculo para convertir los conteos a proporciones.
+
+```{r}
+data_covid_19_diabetes |>  
+  ggplot(aes(x = edad, y = ..count../sum(after_stat(count)))) +
+  geom_bar() +
+  labs(y = "Frecuencia", x = "Edad")
+```
+
+```{r}
+data_covid_19_diabetes |>  
+  ggplot(aes(x = enfer_cardiovascular, 
+             y = ..count.. / sum(..count..))) +
+  geom_bar() +
+  labs(y = "Frecuencia", x = "Enfermedad Cardiovascular")
+```
+
+# 2. Visualizando Datos Numéricos
+
+## 2.1. Con histogramas
+
+Ejemplo con **Glucosa**:
+
+```{r}
+data_covid_19_diabetes |>  
+  ggplot(aes(x = Glucosa)) +
+  geom_histogram() +
+  labs(y = "Frecuencia", x = "Glucosa (mg/dL)")
+```
+
+Ejemplo con **Creatinina**:
+
+```{r}
+data_covid_19_diabetes |>  
+  ggplot(aes(x = Creatinina)) +
+  geom_histogram() +
+  labs(y = "Frecuencia", x = "Creatinina")
+```
+
+Ese segundo ejemplo no hace un histograma de **conteos** sino de **densidad** (normaliza el área a 1).
+
+```{r}
+data_covid_19_diabetes  |>  
+  ggplot(aes(x = Glucosa)) +
+  geom_histogram(aes(y = ..density..)) +
+  labs(y = "Density", x = "Glucosa")
+```
+
+```{r}
+data_covid_19_diabetes  |>  
+  ggplot(aes(x = Creatinina)) +
+  geom_histogram(aes(y = ..density..)) +
+  labs(y = "Density", x = "Creatinina")
+```
+
+A veces, puede ser util visualizar gráficos de lado a lado. Aquí dos histogramas lado a lado usando la función `grid.arrange()`
+
+```{r}
+hist_1 = data_covid_19_diabetes |> ggplot(aes(x = Glucosa)) +
+  geom_histogram() +
+  labs(y = "Frecuencia", x = "Glucosa")
+
+hist_2 = data_covid_19_diabetes  |>  
+  ggplot(aes(x = Glucosa)) +
+  geom_histogram(aes(y = ..density..)) +
+  labs(y = "Density", x = "Glucosa")
+    
+# Mostrar lado a lado
+grid.arrange(hist_1, hist_2, ncol = 2)
+```
+
+```{r}
+hist_1 = data_covid_19_diabetes |> ggplot(aes(x = Creatinina)) +
+  geom_histogram() +
+  labs(y = "Frecuencia", x = "Creatinina")
+
+hist_2 = data_covid_19_diabetes  |>  
+  ggplot(aes(x = Creatinina)) +
+  geom_histogram(aes(y = ..density..)) +
+  labs(y = "Density", x = "Creatinina")
+    
+# Mostrar lado a lado
+grid.arrange(hist_1, hist_2, ncol = 2)
+```
+
+Conteo con un número de barras distinto
+
+Podemos cambiar los intervalos para la generación del histograma usando el argumento bins dentro de la función `geom_histogram()+`
+
+```{r}
+data_covid_19_diabetes |>  
+  ggplot(aes(x = Glucosa)) +
+  geom_histogram(bins = 10) +
+  labs(y = "Frecuencia", x = "Glucosa")
+```
+
+```{r}
+data_covid_19_diabetes |>  
+  ggplot(aes(x = Creatinina)) +
+  geom_histogram(bins = 10) +
+  labs(y = "Frecuencia", x = "creatinina")
+```
+
+```{r}
+data_covid_19_diabetes |>  
+  ggplot(aes(x = Edad)) +
+  geom_histogram(bins = 10) +
+  labs(y = "Frecuencia", x = "edad")
+```
+
+Modificando los colores de las barras del histograma.
+
+```{r}
+data_covid_19_diabetes |>  
+  ggplot(aes(x = Glucosa)) +
+  geom_histogram(
+    color = "black", ## Color de las barras
+    fill = "pink" ## Color de las barras
+    ) + 
+  labs(y = "Frecuencia", 
+       x = "Glucosa(mg/dL)")
+```
+
+```{r}
+data_covid_19_diabetes |>  
+  ggplot(aes(x = Creatinina)) +
+  geom_histogram(
+    color = "white", ## Color de las barras
+    fill = "blue" ## Color de las barras
+    ) + 
+  labs(y = "Frecuencia", 
+       x = "creatinina)")
+```
+
+```{r}
+data_covid_19_diabetes |>  
+  ggplot(aes(x = Edad)) +
+  geom_histogram(
+    color = "beige", ## Color de las barras
+    fill = "brown" ## Color de las barras
+    ) + 
+  labs(y = "Frecuencia", 
+       x = "Edad)")
+```
+
+Modificando color en gráficos de barras. Nota que aquí, usamos el argumento fill para colorear las barras pertenecientes a las categorías.
+
+```{r}
+data_covid_19_diabetes |>  
+  ggplot(aes(x = fct_infreq(edad), fill = edad)) +
+  geom_bar() +
+  labs(y = "Frecuencia", x = "EDAD")
+```
+
+## 2.2. Con Boxplots (gráfico de cajas y bigotes)
+
+Para mostrar datos de una variable en un gráfico de cajas y bigotes usamos la función `geom_boxplot()`
+
+```{r}
+Plaquetas_1 = data_covid_19_diabetes |> 
+  ggplot(aes(y = Plaquetas )) +
+  geom_boxplot() +
+  theme(axis.text.x  = element_blank(),
+        axis.ticks.x = element_blank()) +
+  labs(y = "Plaquetas")
+
+ ## Cambia y por x para invertir el gráfico
+
+Plaquetas_2 = data_covid_19_diabetes |> 
+  ggplot(aes(x = Plaquetas )) + 
+  geom_boxplot() +
+  theme(axis.text.x  = element_blank(),
+        axis.ticks.x = element_blank()) +
+  labs(x = "Plaquetas")
+
+grid.arrange(Plaquetas_1, Plaquetas_2, ncol = 2)
+```
+
+```{r}
+Glucosa_1 = data_covid_19_diabetes |> 
+  ggplot(aes(y = Glucosa )) +
+  geom_boxplot() +
+  theme(axis.text.x  = element_blank(),
+        axis.ticks.x = element_blank()) +
+  labs(y = "Glucosa")
+
+ ## Cambia y por x para invertir el gráfico
+
+Glucosa_2 = data_covid_19_diabetes |> 
+  ggplot(aes(x = Glucosa )) + 
+  geom_boxplot() +
+  theme(axis.text.x  = element_blank(),
+        axis.ticks.x = element_blank()) +
+  labs(x = "Glucosa")
+
+grid.arrange(Glucosa_1, Glucosa_2, ncol = 2)
+```
+
+```{r}
+Edad_1 = data_covid_19_diabetes |> 
+  ggplot(aes(y = Edad )) +
+  geom_boxplot() +
+  theme(axis.text.x  = element_blank(),
+        axis.ticks.x = element_blank()) +
+  labs(y = "Edad")
+
+ ## Cambia y por x para invertir el gráfico
+
+Edad_2 = data_covid_19_diabetes |> 
+  ggplot(aes(x = Edad )) + 
+  geom_boxplot() +
+  theme(axis.text.x  = element_blank(),
+        axis.ticks.x = element_blank()) +
+  labs(x = "Edad")
+
+grid.arrange(Edad_1, Edad_2, ncol = 2)
+```
+
+La función nativa de R, `boxplot()`, permite realizar el mismo gráfico.
+
+```{r}
+box_album_base = boxplot(data_covid_19_diabetes$Glucosa,
+                         ylab = "Glucosa",
+                         horizontal = TRUE, ## Cambia la dirección del gráfico
+                         col = "salmon") ## Añadimos color
+```
+
+```{r}
+box_album_base = boxplot(data_covid_19_diabetes$Edad,
+                         ylab = "Edad",
+                         horizontal = TRUE, ## Cambia la dirección del gráfico
+                         col = "purple") ## Añadimos color
+```
+
+```{r}
+box_album_base = boxplot(data_covid_19_diabetes$Saturación_O2,
+                         ylab = "Saturación de O2",
+                         horizontal = TRUE, ## Cambia la dirección del gráfico
+                         col = "lightblue") ## Añadimos color
+```
+
+# 3. Visualizando variables categóricas *versus* categóricas
+
+```{r}
+data_covid_19_diabetes |> 
+  ggplot(aes(x = pac_fue_hospital, fill = desenla_fallecido)) +
+  geom_bar(position = "dodge") + ## Sin este argumento, las barras estarán una sobre otras
+  labs(y = "Frecuencia",  
+       x = "Paciente del hospital",
+       fill = "Desenlace")
+```
+
+```{r}
+#Raza blanca
+data_covid_19_diabetes |> 
+  ggplot(aes(x = raza_blanca, fill = diabetes_mell_complicada)) +
+  geom_bar(position = "dodge") + ## Sin este argumento, las barras estarán una sobre otras
+  labs(y = "Frecuencia",  
+       x = "raza blanca",
+       fill = "Diabetes complicada")
+
+#Raza negra
+data_covid_19_diabetes |> 
+  ggplot(aes(x = raza_negra, fill = diabetes_mell_complicada)) +
+  geom_bar(position = "dodge") + ## Sin este argumento, las barras estarán una sobre otras
+  labs(y = "Frecuencia",  
+       x = "raza negra",
+       fill = "Diabetes complicada")
+
+#Asiatica
+data_covid_19_diabetes |> 
+  ggplot(aes(x = asiatico, fill = diabetes_mell_complicada)) +
+  geom_bar(position = "dodge") + ## Sin este argumento, las barras estarán una sobre otras
+  labs(y = "Frecuencia",  
+       x = "Asiatico",
+       fill = "Diabetes complicada")
+
+#Latinos
+data_covid_19_diabetes |> 
+  ggplot(aes(x = latino, fill = diabetes_mell_complicada)) +
+  geom_bar(position = "dodge") + ## Sin este argumento, las barras estarán una sobre otras
+  labs(y = "Frecuencia",  
+       x = "Latinos",
+       fill = "Diabetes complicada")
+
+
+```
+
+# 4. Visualizando distribución de variables continuas *versus* categóricas
+
+## 4.1. Gráficos de barras
+
+```{r}
+data_covid_19_diabetes |> 
+  filter(!is.na(diabetes_mell_complicada) & !is.na(raza_blanca)) |> 
+  group_by(diabetes_mell_complicada, raza_blanca) |> 
+  summarise(
+    n = n(),
+    promedio = mean(Glucosa, na.rm = TRUE),
+    de = sd(Glucosa, na.rm = TRUE)
+  ) |> 
+  ggplot(aes(x = diabetes_mell_complicada, y = promedio, fill = raza_blanca)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_errorbar(
+    aes(ymin = promedio - de, ymax = promedio + de),
+    width = 0.5, size = 0.75,
+    position = position_dodge(0.9)
+  ) +
+  labs(
+    y = "Promedio de glucosa (mg/dL)",
+    x = "Diabetes mellitus complicada",
+    fill = "Raza blanca"
+  ) 
+```
+
+```{r}
+data_covid_19_diabetes |> 
+  filter(!is.na(diabetes_mell_complicada) & !is.na(severidad)) |> 
+  group_by(diabetes_mell_complicada, severidad) |> 
+  summarise(
+    n = n(),
+    promedio = mean(Glucosa, na.rm = TRUE),
+    de = sd(Glucosa, na.rm = TRUE)
+  ) |> 
+  ggplot(aes(x = diabetes_mell_complicada, y = promedio, fill = as.factor(severidad))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_errorbar(
+    aes(ymin = promedio - de, ymax = promedio + de),
+    width = 0.5, size = 0.75,
+    position = position_dodge(0.9)
+  ) +
+  labs(
+    y = "Glucosa promedio (mg/dL)",
+    x = "Diabetes mellitus complicada",
+    fill = "Severidad clínica"
+  )
+```
+
+Este gráfico muestra:
+
+-   En el eje **X** : los grupos “Sí” / “No” de *diabetes complicada*.
+
+-   En el eje **Y** : el promedio de *glucosa*.
+
+-   Cada barra coloreada: distintos niveles de *severidad*
+
+-   Las líneas verticales (error bars): la desviación estándar.
+
+    ```{r}
+    # Reagrupamos la severidad en tres niveles
+    data_covid_19_diabetes |> 
+      mutate(
+        severidad_grupo = case_when(
+          severidad >= 0 & severidad <= 3 ~ "Leve",
+          severidad >= 4 & severidad <= 7 ~ "Moderada",
+          severidad >= 8 ~ "Severa",
+          TRUE ~ NA_character_
+        )
+      ) |> 
+      filter(!is.na(diabetes_mell_complicada) & !is.na(severidad_grupo)) |> 
+      group_by(diabetes_mell_complicada, severidad_grupo) |> 
+      summarise(
+        promedio = mean(Glucosa, na.rm = TRUE),
+        de = sd(Glucosa, na.rm = TRUE)
+      ) |> 
+      ggplot(aes(x = diabetes_mell_complicada, y = promedio, fill = severidad_grupo)) +
+      geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+      geom_errorbar(
+        aes(ymin = promedio - de, ymax = promedio + de),
+        width = 0.4,
+        position = position_dodge(0.7)
+      ) +
+      labs(
+        y = "Glucosa promedio (mg/dL)",
+        x = "Diabetes mellitus complicada",
+        fill = "Grado de severidad"
+      ) 
+    ```
+
+## 4.2 Boxplots lado a lado
+
+El siguiente gráfico muestra la distribución de los niveles de glucosa según la presencia o ausencia de diabetes mellitus complicada.
+
+Cada caja representa la mediana, los cuartiles y los valores atípicos de glucosa en cada grupo.
+
+```{r}
+data_covid_19_diabetes |>  
+  filter(!is.na(Glucosa) & !is.na(diabetes_mell_complicada)) |> 
+  ggplot(aes(y = Glucosa, x = diabetes_mell_complicada)) +
+  geom_boxplot() +
+  labs(y = "Glucosa (mg/dL)", x = "Diabetes mellitus complicada")
+
+```
+
+```{r}
+data_covid_19_diabetes |>  
+  filter(!is.na(Glucosa) & !is.na(severidad) & !is.na(diabetes_mell_complicada)) |> 
+  ggplot(aes(y = Glucosa, x = severidad, fill = diabetes_mell_complicada)) +
+  geom_boxplot() +
+  labs(y = "Glucosa (mg/dL)", x = "Severidad clínica", fill = "Diabetes complicada")
+```
+
+```{r}
+data_covid_19_diabetes |> 
+  mutate(
+    severidad_grupo = case_when(
+      severidad >= 0 & severidad <= 3 ~ "Leve",
+      severidad >= 4 & severidad <= 7 ~ "Moderada",
+      severidad >= 8 ~ "Severa",
+      TRUE ~ NA_character_
+    )
+  ) |> filter(!is.na(Proteína_C_reactiva) & !is.na(severidad_grupo) & !is.na(diabetes_mell_complicada)) |> 
+  ggplot(aes(y = Proteína_C_reactiva, x = severidad_grupo, fill = diabetes_mell_complicada)) +
+  geom_boxplot() +
+  labs(y = "Proteína C Reactiva (mg/L)", x = "Severidad clínica", fill = "Diabetes complicada")
+```
+
+## 4.3. Filas de histogramas
+
+```{r}
+data_covid_19_diabetes |>  
+  filter(!is.na(edad) & !is.na(desenla_fallecido) & !is.na(Glucosa)) |> 
+  group_by(edad) |>  
+  ggplot(aes(x = Glucosa)) +
+  geom_histogram(aes(y = ..density..), bins = 20,
+                 color = "red", fill = "pink") +
+  labs(x = "Glucosa (mg/dL)", y = "Proporción") +
+  facet_wrap(~edad, nrow = 3) +
+  ggtitle("Distribución de glucosa por edad")
+```
+
+```{r}
+# Reagrupamos la severidad en tres niveles
+data_covid_19_diabetes |> 
+  mutate(
+    severidad_grupo = case_when(
+      severidad >= 0 & severidad <= 3 ~ "Leve",
+      severidad >= 4 & severidad <= 7 ~ "Moderada",
+      severidad >= 8 ~ "Severa",
+      TRUE ~ NA_character_
+    )
+  ) |>  
+  filter(
+    !is.na(Proteína_C_reactiva), 
+    !is.na(severidad_grupo), 
+    !is.na(diabetes_mell_complicada)
+  ) |> 
+  ggplot(aes(x = Proteína_C_reactiva)) +
+  geom_histogram(aes(y = ..density..), bins = 20,
+                 color = "purple", fill = "pink") +
+  labs(
+    x = "Proteína C Reactiva (mg/L)", 
+    y = "Proporción"
+  ) +
+  facet_wrap(~severidad_grupo, nrow = 3) +
+  ggtitle("Distribución de Proteína C Reactiva por severidad clínica")
+```
+
+# 5. Visualización para variables continuas versus continuas
+
+Usamos la función geom_point para generar gráficos de dispersión y visualizar la relación de dos variables numéricas
+
+```{r}
+data_covid_19_diabetes |> 
+  ggplot(aes(x = Plaquetas, y = Dímero_D)) +
+  geom_point() +
+  labs(x = "Ferritina (ng/mL)", y = "Dímero D (mg/L)")
+```
+
+```{r}
+data_covid_19_diabetes |> 
+  ggplot(aes(x = Glucosa, y = Proteína_C_reactiva)) +
+  geom_point() +
+  labs(x = "Glucosa (mg/dL)", y = "Proteína C Reactiva (mg/L)")
+```
+
+```{r}
+data_covid_19_diabetes |> 
+  ggplot(aes(x = Glucosa, y = Creatinina)) +
+  geom_point() +
+  labs(x = "Glucosa", y = "Creatinina (mg/dL)")
+```
+
+La función geom_smoth añade una línea de regresión al gráfico. "lm" es para linear model
+
+```{r}
+data_covid_19_diabetes |> 
+  ggplot(aes(x = Creatinina, y = Nitrógeno_ureico_sangre)) +
+  geom_point(color = "steelblue") +
+  geom_smooth(method = "lm", se = TRUE, color = "darkred") +
+  labs(
+    x = "Creatinina (mg/dL)",
+    y = "Nitrógeno ureico en sangre (mg/dL)")
+```
+
+*La función `geom_smooth(method = "lm")` añade la línea de regresión lineal.*
+
+Aquí, función geom_smooth() añade una línea de tendencia suavizada al gráfico.
+
+```{r}
+data_covid_19_diabetes |> 
+  ggplot(aes(x = Proteína_C_reactiva, y = Ferritina)) +
+  geom_point(color = "forestgreen") +
+  geom_smooth(stat = "smooth", se = TRUE, color = "orange") +
+  labs(
+    x = "Proteína C reactiva (mg/L)",
+    y = "Ferritina (ng/mL)",
+  )
+```
+
+```{r}
+data_covid_19_diabetes |> 
+  filter(!is.na(Creatinina) & !is.na(Nitrógeno_ureico_sangre)) |> 
+  ggplot(aes(x = Creatinina, y = Nitrógeno_ureico_sangre)) +
+  geom_point(color = "forestgreen") +
+  geom_smooth(stat = "smooth", se = TRUE, color = "orange") +
+  labs(
+    x = "Creatinina (mg/dL)",
+    y = "Nitrógeno ureico en sangre (mg/dL)",
+    title = "Asociación entre Creatinina y Nitrógeno ureico en sangre"
+  )
+```
+
+Finalmente, la función `ggpairs()` permite visualizar multiple variables numerica a la vez. Aquí, combinamos la funciónm select() (para seleccionar las variables numéricas) y ggpairs, para generar el gráfico y los coeficientes de correlación.
+
+```{r}
+data_covid_19_diabetes |>  
+  select(Creatinina, Nitrógeno_ureico_sangre, Glucosa) %>% 
+  ggpairs(columnLabels = c("Creatinina (mg/dL)", 
+                           "Nitrógeno ureico (mg/dL)", 
+                           "Glucosa (mg/dL)"))
+```
+
+```{r}
+grafico_dispersión <- data_covid_19_diabetes |>  
+  select(Creatinina, Nitrógeno_ureico_sangre, Glucosa) |> 
+  ggpairs(columnLabels = c("Creatinina (mg/dL)", 
+                           "Nitrógeno ureico (mg/dL)", 
+                           "Glucosa (mg/dL)"))
+```
+
+# 6. Exportando figuras
+
+```{r}
+ggsave(
+  "grafico_dispersión.png",  
+  plot = grafico_dispersión, 
+  width = 7,                 
+  height = 4,                
+  dpi = 300                  
+)
+```

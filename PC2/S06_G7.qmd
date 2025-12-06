@@ -1,0 +1,118 @@
+---
+title: "S06_G7"
+format: html
+editor: visual
+---
+
+**Instalar y Cargar paquetes para el cálculo de análisis de poder estadístico**
+
+```{r}
+install.packages("epiR")
+```
+
+```{r}
+library(epiR)
+```
+
+# 1. Cálculo de muestra para un estudio de prevalencia (survey)
+
+Para el cálculo de muestra en un estudio de **prevalencia**, necesitamos conocer la **prevalencia esperada (`Py`)** y, opcionalmente, el tamaño total de la población de estudio.
+
+## **Caso aplicado:**
+
+Un grupo de investigadores desea determinar la **prevalencia de diabetes mellitus (DM)** en pacientes con **enfermedad renal crónica (ERC)** atendidos en hospitales de la región Ica, Perú.\
+Según el metaanálisis *“Prevalencia de hipertensión y diabetes mellitus en pacientes peruanos con enfermedad renal crónica”* (León-Figueroa et al., 2024, *BMC Nephrology*), la prevalencia combinada de DM en pacientes peruanos con ERC fue de **33 %** (IC 95%: 26–40%).
+
+Doi: <https://doi.org/10.1186/s12882-024-03595-x>
+
+### **¿Cuál sería el tamaño de muestra necesario?**
+
+En este ejemplo, se desea estimar la prevalencia de DM (33%) con un **error relativo del 20%** y un **nivel de confianza del 95%**.\
+El cálculo se puede realizar en R con la función `epi.sssimpleestb()` del paquete **epiR**, que permite estimar el tamaño de muestra para una variable binaria (presencia/ausencia)
+
+```{r}
+# Cálculo de tamaño de muestra para prevalencia de DM en pacientes con ERC
+epi.sssimpleestb(N = NA,   # población desconocida o grande
+                 Py = 0.33, # prevalencia esperada (33%)
+                 epsilon = 0.20,  # error relativo del 20%
+                 error = "relative",
+                 se = 1, sp = 1,
+                 nfractional = FALSE,
+                 conf.level = 0.95)
+```
+
+El tamaño de muestra necesario es de **195 participantes**.
+
+Por lo tanto, se requieren **al menos 195 pacientes con enfermedad renal crónica** para estimar la prevalencia de diabetes mellitus con una precisión del 20 % y un nivel de confianza del 95 %.
+
+# 2. Cálculo de muestra para un estudio de casos y controles
+
+**Caso aplicado:**\
+Un investigador desea evaluar la asociación entre el mal control metabólico y el riesgo de enfermedad arterial periférica (EAP) en pacientes con diabetes mellitus tipo 2 (DM2). Para ello, se comparará la frecuencia de mal control metabólico entre dos grupos: una muestra de pacientes con EAP (casos) y una muestra de pacientes sin EAP (controles).
+
+Se plantea que la relación de controles a casos será de 4:1, siguiendo la proporción usada en el estudio. El estudio busca detectar un Odds Ratio (OR) aproximado de 5.45, según los resultados reportados por Quijandría-Cárdenas et al. Además, la prevalencia de mal control metabólico en los controles fue del 82.2 %
+
+DOI: <https://doi.org/10.35663/amp.2022.394.2448>
+
+### **¿Cuál sería el tamaño de muestra necesario de casos y controles?**
+
+Aquí, usamos la función `epi.sscc()` del paquete `epiR` en R para estudios caso-control no pareados:
+
+```{r}
+epi.sscc(OR = 5.45, p1 = NA, 
+         p0 = 0.822, n = NA, 
+         power = 0.80, r = 4, 
+         phi.coef = 0, design = 1, 
+         sided.test = 2, conf.level = 0.95, 
+         method = "unmatched", nfractional = FALSE, 
+         fleiss = FALSE)
+```
+
+El tamaño de muestra necesario es de **198 participantes**.
+
+Por lo tanto, se requieren al menos **40 casos** con enfermedad arterial periférica y **158 controles** sin enfermedad arterial periférica para evaluar la asociación entre mal control metabólico y la presencia de EAP en pacientes con diabetes mellitus tipo 2, con un **Odds Ratio esperado de 5,45**, una **potencia del 80 %** y un **nivel de confianza del 95 %**.
+
+# 3. Cálculo de muestra para un estudio de cohorte
+
+Un grupo de investigadores desea evaluar el efecto de la **diabetes mellitus** sobre el riesgo de infección por **COVID-19** en adultos de comunidades rurales andinas de Perú. Para ello, reclutarán participantes de los Centros de Atención Primaria II Chavín de Huantar y Pomobamba en Áncash, y del Centro de Atención Primaria II Chalhuanca en Apurímac, y los seguirán retrospectivamente durante el periodo de estudio (abril a junio de 2020) para identificar casos positivos de COVID-19.
+
+Los investigadores buscan tener un **80 % de poder estadístico** para detectar un riesgo (Odds Ratio) de **1,7** veces mayor de COVID-19 en pacientes con diabetes, en comparación con aquellos sin diabetes, utilizando un **nivel de significancia del 0,05**.
+
+Según los datos preliminares del estudio, entre los pacientes sin diabetes se reportaron 14 positivos de COVID-19 de 170 participantes.
+
+DOI: <https://doi.org/10.22354/in.v25i4.957> 
+
+### ¿Cuál sería el tamaño de muestra necesario para los grupos de expuestos (con diabetes) y no expuestos (sin diabetes)?
+
+Para responder, se puede utilizar la función `epi.sscohortt()` en R, que permite calcular el tamaño de muestra para estudios de cohorte retrospectivos:
+
+```{r}
+epi.sscohortt(irexp1 = 2/14, irexp0 = 14/170, FT = 0.25, n = NA, 
+              power = 0.80, r = 1, design = 1, sided.test = 2, 
+              nfractional = FALSE, conf.level = 0.95)
+```
+
+El tamaño de muestra necesario es de **7,802 participantes**, con **3,901 con diabetes** y **3,901 sin diabetes**. Esto permite detectar un **riesgo relativo de 1,73** para COVID-19 en pacientes con diabetes, con un **80 % de poder estadístico** y un **95 % de confianza**.
+
+# 4. Cálculo de poder estadístico
+
+Un grupo de investigadores desea evaluar el efecto de la diabetes mellitus tipo 2 (DM2) sobre la probabilidad de presentar **mala calidad de sueño** en adultos residentes de Tumbes, Perú. Para ello, incluirán participantes con DM2 y diagnóstico previo, así como participantes sin DM2, y analizarán la prevalencia de mala calidad de sueño. Se planea incluir a 105 participantes con DM2 con diagnóstico previo y 1429 participantes sin DM2 (de acuerdo con la muestra analizada en el estudio). La prevalencia de mala calidad de sueño entre los participantes **sin DM2** fue de 19,5%, mientras que entre aquellos con DM2 con diagnóstico previo fue de 27,6% (RP ≈ 1,40) según el análisis multivariable. Se utilizará un nivel de significancia de 0,05.
+
+DOI: <https://doi.org/10.17843/rpmesp.2022.391.10755>
+
+### **¿Cuál es el poder estadístico con el tamaño de muestra propuesto para detectar una diferencia en la prevalencia de mala calidad de sueño entre los grupos?**
+
+```{r}
+epi.sscohortt(irexp1 = 27.6/100,  # prevalencia de mala calidad de sueño en DM2 con diagnóstico previo
+              irexp0 = 19.5/100,  # prevalencia en participantes sin DM2
+              FT = 1,             # tiempo de seguimiento, 1 como unidad
+              n = 105 + 1429,     # tamaño total de la muestra
+              power = NA,
+              r = 1429/105,       # razón entre tamaños de grupo
+              design = 1,
+              sided.test = 2,
+              nfractional = FALSE,
+              conf.level = 0.95)
+```
+
+Con el tamaño de muestra del estudio (1,534 participantes: 105 con DM2 diagnosticada y 1,429 sin DM2), se obtuvo un poder estadístico de 98% para detectar la asociación observada entre DM2 y mala calidad de sueño, con una razón de incidencia de 1,42. Esto indica que el estudio tiene suficiente capacidad para identificar diferencias significativas en las características del sueño entre ambos grupos.

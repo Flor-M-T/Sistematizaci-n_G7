@@ -1,0 +1,436 @@
+---
+title: "S09_07"
+format: html
+editor: visual
+---
+
+# Cargamos los paquetes necesarios
+
+```{r}
+install.packages("car") # Para la prueba de Levene
+```
+
+```{r}
+library(tidyverse)
+library(here)
+library(rio)
+library(gtsummary)
+library(car)
+```
+
+# Cargar los datos
+
+```{r}
+data_covid_diabetes <- import(here("covid_19_diabetes.csv"))
+```
+
+# Sobre los datos para esta práctica
+
+El dataset covid_19_diabetes, compuesto por 686 pacientes hospitalizados por COVID-19, contiene información clínica, bioquímica y antecedentes médicos (por ejemplo: diabetes, enfermedad renal, valores de glucosa, creatinina, dímero D, ferritina, entre otros).
+
+Este conjunto de datos permite explorar asociaciones entre variables clínicas y desenlaces, como la mortalidad o la severidad del cuadro.
+
+# 1 Regresión lineal simple
+
+La regresión es un método estadístico que permite evaluar la relación entre una variable dependiente o desenlace (por ejemplo, fallecimiento o días de hospitalización) y una o más variables predictoras (como glucosa, edad, o saturación de oxígeno).
+
+En este caso, se utilizará una regresión lineal simple para analizar si existe una asociación entre los niveles de glucosa y la duración de la hospitalización.
+
+¿Existe una asociación entre el nivel de **glucosa** y la **duración de la hospitalización (en días)** en pacientes con COVID-19?
+
+## 1.1 El problema en este ejercicio
+
+En este ejercicio, el **desenlace (Y)** de interés es la **duración de la hospitalización (en días)** de los pacientes con COVID-19.
+
+Esta variable refleja la evolución clínica del paciente y puede estar influida por diversos factores, como los niveles de glucosa, la edad o la severidad del cuadro.
+
+A continuación, se explora la distribución de la variable **`duraci_hospita_diaz`** mediante un histograma y se destaca su promedio mediante una línea vertical.
+
+```{r}
+data_covid_diabetes |>  
+  ggplot(aes(x = duraci_hospita_diaz)) +
+  geom_histogram(
+    color = "white",
+    fill = "skyblue",   # color opcional para darle mejor contraste
+    bins = 30           #  ajustamos el número de barras
+  ) +
+  labs(
+    y = "Frecuencia",
+    x = "Duración de hospitalización (días)",
+    title = "Distribución de la duración de hospitalización en pacientes con COVID-19"
+  ) +
+  geom_vline(
+    xintercept = mean(data_covid_diabetes$duraci_hospita_diaz, na.rm = TRUE),
+    color = "darkred",
+    size = 1.2
+  )
+```
+
+En estos datos, el **promedio de la duración de hospitalización** es:
+
+```{r}
+mean(data_covid_diabetes$duraci_hospita_diaz, na.rm = TRUE)
+```
+
+En estos datos, el **promedio de la duración de hospitalización** es de **7.28 días**. (redondeamos 7.27)
+
+A partir del histograma y de este valor promedio (valor esperado), se observa que existe una amplia variación en la duración de las hospitalizaciones entre los pacientes con COVID-19.
+
+Esto sugiere que otros factores clínicos o bioquímicos, como los niveles de glucosa, la edad o la severidad del cuadro, podrían influir en el tiempo que un paciente permanece hospitalizado.
+
+## 1.2 Notación en el método de regresión lineal simple
+
+El método de **regresión lineal simple** busca encontrar la **línea que mejor se ajusta** a la relación lineal entre la **duración de la hospitalización (en días)** y los **niveles de glucosa** de los pacientes con COVID-19.
+
+En la siguiente figura se muestra el [diagrama de dispersión]{.underline} que representa esta relación, junto con la línea de regresión ajustada mediante el modelo lineal.
+
+```{r}
+plot(duraci_hospita_diaz ~ Glucosa, 
+     data = data_covid_diabetes,
+     col = "gray",
+     ylab = "Duración de hospitalización (días)",
+     xlab = "Glucosa (mg/dL)",
+     las = 1,
+     pch = 20, 
+     font.lab = 2, 
+     font.axis = 2)
+
+# Ajuste del modelo de regresión lineal
+abline(lm(duraci_hospita_diaz ~ Glucosa, data = data_covid_diabetes),
+       lwd = 2, 
+       col = "darkred")
+```
+
+La **regresión lineal simple** se expresa como:
+
+$$
+Y = \beta_0 + \beta_1 X + \epsilon
+$$
+
+donde Y la **duración de hospitalización (días)** y X el **nivel de glucosa (mg/dL)**.
+
+El **intercepto (**β₀​) representa la duración esperada de hospitalización cuando la glucosa es 0 mg/dL (aunque no tenga sentido clínico, es útil matemáticamente).
+
+La **pendiente (**β1​) indica cuánto cambia, en promedio, la duración de la hospitalización por cada unidad adicional de glucosa.
+
+El término de error (𝜀) refleja la variabilidad no explicada por el modelo.
+
+## 1.3 Ajustando el modelo de regresión lineal simple para nuestro problema
+
+En R, utilizamos la función `lm()` para ajustar un **modelo de regresión lineal**.\
+“lm” proviene de *linear model*.
+
+Dentro de la función se especifica el **desenlace (Y)**, el **predictor (X)** y el **conjunto de datos** donde se encuentran las variables.
+
+La estructura general es:
+
+```{r}
+lm(Y ~ X, data = data_covid_diabetes)
+```
+
+En este caso, el modelo se ajusta para evaluar la asociación entre los **niveles de glucosa (mg/dL)** y la **duración de la hospitalización (en días)** en pacientes con COVID-19.
+
+```{r}
+# Ajuste del modelo de regresión lineal simple
+modelo_glucosa_hosp <- lm(duraci_hospita_diaz ~ Glucosa, data = data_covid_diabetes)
+
+# Resumen de resultados del modelo
+summary(modelo_glucosa_hosp)
+```
+
+El modelo ajustado permite estimar el efecto promedio de los niveles de glucosa sobre la duración de la hospitalización.\
+
+La función `summary()` muestra los coeficientes (β0,β1​), su significancia estadística y el grado de ajuste del modelo.
+
+## 1.4 Interpretando los resultados
+
+La sección **Coefficients** del resultado del modelo:
+
+```{r}
+summary(modelo_glucosa_hosp)$coef
+```
+
+muestra las estimaciones y pruebas de hipótesis para el **intercepto (β₀)**, etiquetado como *(Intercept)*, y para el **coeficiente de la glucosa (β₁)**, etiquetado como *Glucosa*.
+
+En esta misma sección, la columna *Estimate* presenta los coeficientes estimados del modelo. Así, se obtuvo la siguiente ecuación estimada:
+
+Y=8.53−0.0099X
+
+donde **Y** representa la *duración de la hospitalización (en días)* y **X** los *niveles de glucosa (mg/dL)*.
+
+El **intercepto** (β₀ = 8.54) indica que, teóricamente, cuando la glucosa es 0 mg/dL (valor sin interpretación clínica), la duración esperada de hospitalización sería de **8.54 días**.
+
+La **pendiente** (β₁ = -0.0099) sugiere que por cada incremento de 1 mg/dL en los niveles de glucosa, la duración promedio de hospitalización **disminuye en 0.0099 días**, manteniendo las demás condiciones constantes.
+
+El **valor p** asociado a la glucosa (p = 2.51 × 10⁻⁶) es menor que 0.05, lo que indica que la relación entre la glucosa y la duración de hospitalización es **estadísticamente significativa**.
+
+Finalmente, el **valor R² = 0.0319** muestra que el modelo explica aproximadamente el **3.2 % de la variabilidad** en la duración de la hospitalización de los pacientes, lo cual indica un efecto estadísticamente significativo pero de magnitud moderada.
+
+## 1.5 Reporte los resultados del ajuste del modelo de regresión lineal simple
+
+En este estudio se empleó un modelo de regresión lineal simple para evaluar la asociación entre los niveles de glucosa (mg/dL) y la duración de la hospitalización (días) en pacientes con COVID-19.
+
+El modelo mostró que los niveles de glucosa explicaron el 3.19 % de la variabilidad en la duración de la hospitalización (R² = 0.0319).\
+Se encontró una asociación negativa y significativa entre ambas variables (B = -0.0099; p \< 0.001).
+
+En promedio, por cada aumento de 1 mg/dL en glucosa, la duración esperada de hospitalización disminuyó en 0.0099 días.\
+Estos resultados sugieren que mayores niveles de glucosa se relacionan con una menor duración promedio de hospitalización en la muestra analizada.
+
+Además, es recomendable mostrar los resultados en una tabla.
+
+```{r}
+# Configuramos el idioma de salida de la tabla
+theme_gtsummary_language("es")
+
+# Creamos la tabla de resultados del modelo de regresión
+tabla_reporte_glucosa_hosp <- modelo_glucosa_hosp |> 
+  tbl_regression(
+    intercept = TRUE,
+    estimate_fun = function(x) style_sigfig(x, digits = 4),
+    pvalue_fun   = function(x) style_pvalue(x, digits = 3),
+    label        = list(Glucosa ~ "Glucosa (mg/dL)")
+  ) |>
+  modify_caption("Regresión lineal: Duración de hospitalización (días) en función de los niveles de glucosa (mg/dL)")
+
+# Mostramos la tabla en pantalla
+tabla_reporte
+```
+
+Exportamos la tabla:
+
+```{r}
+tabla_reporte_glucosa_hosp |> 
+  as_flex_table()  |> 
+  flextable::save_as_docx(path = "tabla_reporte.docx")
+```
+
+# 2 Prueba t de Student para muestras independientes
+
+Imaginemos que queremos evaluar si el promedio de **glucosa (mg/dL)** difiere significativamente entre los pacientes **con** y **sin enfermedad renal**.\
+En esta situación, hay dos grupos de muestras independientes (“Sí” y “No” en la variable `enfer_renal`).
+
+## 2.1 ¿Cuándo usar la prueba t de Student para muestras independientes?
+
+La prueba t de Student se aplica cuando:
+
+-   Los dos grupos provienen de poblaciones con distribución aproximadamente normal (evaluado con la prueba de **Shapiro-Wilk**).
+
+-   Las varianzas de ambos grupos son homogéneas (evaluado con la **prueba F** o `var.test()`).
+
+    **Hipótesis:**
+
+-   **Hipótesis nula (H₀):** No hay diferencia entre las medias de los dos grupos.
+
+    **H₀:** μ₍renal Sí₎ = μ₍renal No₎
+
+-   Hipótesis alternativa (H₁): Hay diferencia entre las medias.​
+
+    **H₁:** μ₍renal Sí₎ ≠ μ₍renal No₎
+
+## 2.2 Sobre los datos para esta práctica
+
+El dataset contiene información de 686 pacientes hospitalizados, con variables clínicas y bioquímicas, entre ellas **Glucosa (mg/dL)** y **Enfermedad renal** (`enfer_renal`: “Sí” / “No”).
+
+## 2.3 Resumen y visualización
+
+Antes de aplicar la prueba t, verificamos el tamaño de muestra y la media por grupo:
+
+```{r}
+data <- data_covid_diabetes
+```
+
+```{r}
+group_by(data, enfer_renal) |> 
+  summarise(
+    n = n(),
+    media_glucosa = mean(Glucosa, na.rm = TRUE),
+    sd_glucosa = sd(Glucosa, na.rm = TRUE)
+  )
+```
+
+**Visualización**
+
+Podemos visualizar las diferencias con un boxplot:
+
+```{r}
+data |>  
+  filter(!is.na(enfer_renal), !is.na(Glucosa)) |> 
+  ggplot(aes(x = enfer_renal, y = Glucosa, fill = enfer_renal)) +
+  geom_boxplot() +
+  labs(x = "Enfermedad renal", y = "Glucosa (mg/dL)")
+```
+
+## 2.4 Pruebas preliminares para evaluar los supuestos de la prueba t de Student
+
+#### Supuesto 1: Normalidad de los datos
+
+Se evalúa con la prueba de **Shapiro-Wilk** en cada grupo.
+
+```{r}
+data |> 
+  filter(enfer_renal == "Sí") |> 
+  summarise(shapiro = list(shapiro.test(Glucosa))) |> 
+  pull(shapiro)
+
+data |> 
+  filter(enfer_renal == "No") |> 
+  summarise(shapiro = list(shapiro.test(Glucosa))) |> 
+  pull(shapiro)
+```
+
+#### Supuesto 2: Homogeneidad de varianzas
+
+Se evalúa con la **prueba F**:
+
+```{r}
+var.test(Glucosa ~ enfer_renal, data = data)
+```
+
+## 2.5 Realizamos la prueba t para nuestros datos.
+
+```{r}
+t.test(Glucosa ~ enfer_renal, data = data, var.equal = TRUE)
+```
+
+**Interpretación**
+
+El valor de p = 0.2893 es mayor que 0.05, por lo que no existe evidencia estadísticamente significativa para afirmar que los niveles promedio de glucosa difieren entre los pacientes con y sin enfermedad renal.
+
+En promedio, los pacientes sin enfermedad renal presentaron un nivel de glucosa de 134.41 mg/dL, mientras que aquellos con enfermedad renal tuvieron un promedio de 124.01 mg/dL.
+
+Aunque el grupo sin enfermedad renal mostró un valor promedio ligeramente mayor, esta diferencia no es estadísticamente significativa (t = 1.06; gl = 684; p = 0.2893).
+
+# 3 Análisis de Varianza (ANOVA)
+
+El análisis de varianza (ANOVA) de una vía es una extensión de la prueba t de Student para muestras independientes, utilizada cuando se desea comparar las medias de una variable cuantitativa en **más de dos grupos**.
+
+En este caso, el ANOVA se aplicará para evaluar si existen **diferencias significativas en los niveles de glucosa (mg/dL)** entre los grupos definidos por una **condición clínica**, por ejemplo, la **presencia de enfermedad renal** u otra variable categórica del conjunto de datos `data_covid_diabetes`.
+
+## 3.1 ¿Cuándo usar el ANOVA de una vía?
+
+El ANOVA de una vía se utiliza bajo las siguientes condiciones:
+
+-   Las observaciones son **independientes y aleatorias** dentro de cada grupo.
+
+-   Los datos de cada grupo siguen una **distribución normal**.
+
+-   Las varianzas poblacionales de los grupos son **homogéneas** (supuesto de homocedasticidad).
+
+Las hipótesis del ANOVA son:
+
+-   **H₀ (hipótesis nula):** No existen diferencias entre las medias de los grupos.
+
+-   **H₁ (hipótesis alternativa):** Al menos una media difiere significativamente de las demás.
+
+## 3.2 Sobre los datos para esta práctica
+
+El dataset `data_covid_diabetes` contiene información clínica de **686 pacientes hospitalizados con COVID-19**, incluyendo variables sociodemográficas, clínicas y bioquímicas.
+
+Para este análisis, se evaluarán los **niveles de glucosa (mg/dL)** como variable dependiente y la variable **enfer_cardiovascular** (“Sí” / “No”) como factor de agrupación.
+
+## 3.3 Resumen y visualización
+
+Antes de realizar el ANOVA, se explora la distribución de los datos en cada grupo.
+
+```{r}
+data_covid_diabetes |>
+  group_by(enfer_cardiovascular) |>
+  summarise(
+    n = n(),
+    media = mean(Glucosa, na.rm = TRUE),
+    sd = sd(Glucosa, na.rm = TRUE),
+    min = min(Glucosa, na.rm = TRUE),
+    max = max(Glucosa, na.rm = TRUE)
+  )
+```
+
+Visualización de las distribuciones:
+
+```{r}
+data_covid_diabetes |>  
+  filter(!is.na(enfer_cardiovascular) & !is.na(Glucosa)) |> 
+  ggplot(aes(x = enfer_cardiovascular, y = Glucosa, fill = enfer_cardiovascular)) +
+  geom_boxplot() +
+  labs(x = "Enfermedad cardiovascular", y = "Glucosa (mg/dL)") +
+  theme_minimal()
+```
+
+## 3.4 Pruebas preliminares para evaluar los supuestos del ANOVA
+
+Antes de aplicar el ANOVA, es necesario comprobar que los datos cumplen con los supuestos básicos del modelo.
+
+### Supuesto 1: Normalidad de los datos
+
+Los datos deben provenir de una distribución aproximadamente normal en cada grupo.\
+Para verificarlo, aplicamos la **prueba de Shapiro-Wilk** dentro de cada categoría de la variable `enfer_cardiovascular`.
+
+```{r}
+data_covid_diabetes <- data_covid_diabetes |>
+mutate(enfer_cardiovascular = as.factor(enfer_cardiovascular))
+
+```
+
+```{r}
+data_covid_diabetes |>
+filter(enfer_cardiovascular == "Sí") |>
+summarise(shapiro = list(shapiro.test(Glucosa))) |>
+pull(shapiro)
+
+```
+
+```{r}
+data_covid_diabetes |>
+filter(enfer_cardiovascular == "No") |>
+summarise(shapiro = list(shapiro.test(Glucosa))) |>
+pull(shapiro)
+
+```
+
+**Interpretación:**
+
+El valor **p = 8.33 × 10⁻¹³** es **mucho menor que 0.05**, lo que **indica que los datos de glucosa no siguen una distribución normal** en los grupos de pacientes con y sin enfermedad cardiovascular.
+
+En otras palabras, el supuesto de normalidad **no se cumple**.\
+Esto puede deberse a la presencia de valores extremos o a una distribución sesgada de los niveles de glucosa.
+
+### Supuesto 2: Homogeneidad de varianzas
+
+Las varianzas de los grupos deben ser aproximadamente iguales.\
+Esto se evalúa mediante la **prueba de Levene**.
+
+```{r}
+leveneTest(Glucosa ~ enfer_cardiovascular, data = data_covid_diabetes)
+
+```
+
+**Interpretación:**
+
+El **valor p = 0.3206** es **mayor que 0.05**, por lo tanto, **no se rechaza la hipótesis nula** del test de Levene.\
+Esto indica que **las varianzas de los niveles de glucosa son homogéneas** entre los grupos con y sin enfermedad cardiovascular.
+
+En otras palabras, **se cumple el supuesto de igualdad de varianzas**, lo que permite aplicar pruebas que asumen homocedasticidad, como la **prueba t de Student clásica** (si la normalidad también se cumpliera).
+
+## 3.5 Realizamos la prueba de ANOVA de una vía para nuestros datos.
+
+Una vez verificados los supuestos, aplicamos el ANOVA para evaluar si existen diferencias en los niveles de glucosa entre pacientes **con y sin enfermedad cardiovascular**.
+
+```{r}
+res_anova <- aov(Glucosa ~ enfer_cardiovascular, data = data_covid_diabetes)
+summary(res_anova)
+```
+
+**Interpretando los resultados:**
+
+El valor p obtenido (**p = 0.865**) es **mayor que 0.05**, por lo tanto **no se rechaza la hipótesis nula**.\
+Esto indica que **no existen diferencias estadísticamente significativas en los niveles promedio de glucosa entre los pacientes con y sin enfermedad cardiovascular**.
+
+En otras palabras, el nivel de glucosa promedio parece ser similar en ambos grupos.\
+Por esta razón, no es necesario realizar pruebas post hoc (como Tukey HSD), ya que no se encontró evidencia de diferencias entre los grupos.
+
+# 4. Prueba post-hoc (opcional)
+
+La prueba **Tukey HSD** se utiliza únicamente cuando el **ANOVA** arroja un resultado significativo (p \< 0.05), con el fin de identificar entre qué grupos se encuentran las diferencias.
+
+Sin embargo, en este análisis el valor p obtenido fue **0.865**, lo que indica que **no existen diferencias estadísticamente significativas** en los niveles promedio de glucosa entre los pacientes con y sin enfermedad cardiovascular.
+
+Por este motivo, **no es necesario aplicar la prueba post hoc Tukey HSD**, ya que no se detectaron diferencias globales que justifiquen comparaciones múltiples entre grupos.

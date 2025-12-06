@@ -1,0 +1,180 @@
+---
+title: "S07_G7_"
+format: html
+editor: visual
+---
+
+# Cargamos los paquetes necesarios
+
+```{r}
+library(rio)
+library(here)
+library(ggplot2)
+```
+
+# Cargar los datos
+
+```{r}
+data_covid_diabetes <- import(here("covid_19_diabetes.csv"))
+```
+
+```{r}
+str(data_covid_diabetes)
+```
+
+# 1. Para datos continuos
+
+La prueba t de Student y el ANOVA son métodos estadísticos ampliamente utilizados para evaluar si el valor promedio de una variable numérica difiere entre dos o más grupos o categorías.
+
+Ambas pruebas asumen que la variable continua sigue una distribución normal.\
+Pero, ¿cómo podemos comprobar si esta condición se cumple?\
+Mediante una prueba de bondad de ajuste, que evalúa si los datos se ajustan a una distribución normal.
+
+Una de las pruebas más empleadas para este propósito es la prueba de Shapiro-Wilk, que permite determinar si los datos provienen de una distribución normal, requisito importante antes de aplicar pruebas paramétricas como la t de Student o el ANOVA.
+
+## Variables analizadas
+
+En este caso, se evaluó la normalidad de las variables **Edad**, **Duración en el hospital (duraci_hospita_diaz)** y **Dímero_D**, aplicando la función `shapiro.test()` en R para cada una de ellas.\
+
+Esto permitió identificar si dichas variables cumplen con el supuesto de normalidad necesario para los análisis posteriores.
+
+### **Dímero**
+
+```{r}
+shapiro.test(data_covid_diabetes$Dímero_D)
+```
+
+**Estadístico W:** 0.59904
+
+**Valor p (p-value):** \< 0.00000000000000022 (es decir, \< 2.2e-16)
+
+El valor-p obtenido es muchísimo menor que 0.05, lo cual indica evidencia suficiente para rechazar la hipótesis nula (H₀). Por lo tanto, se acepta la hipótesis alternativa (H₁), que plantea que los datos no provienen de una distribución normal.
+
+Facilitamos con una visualización clara, reproducible y estandarizada de los datos, lo cual complementa el análisis estadístico formal y mejora la interpretación de los resultados.
+
+```{r}
+data_covid_diabetes |>  
+  ggplot(aes(x = Dímero_D)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "skyblue", color = "black") +
+  geom_density(color = "red", size = 1) 
+```
+
+El histograma muestra que la variable `Dímero_D` tiene una distribución asimétrica hacia la derecha, con la mayoría de valores cerca de cero y algunos valores muy altos. La curva de densidad confirma que no sigue una distribución normal, lo que concuerda con la prueba de Shapiro-Wilk.
+
+### **Duracion de hospitalización**
+
+```{r}
+shapiro.test(data_covid_diabetes$duraci_hospita_diaz)
+```
+
+-   **Estadístico W: 0.79946**
+
+-   **Valor p: \< 2.2e-16**
+
+```         
+```
+
+Como el valor p es mucho menor que 0.05, se rechaza la hipótesis nula (H₀) que plantea que los datos provienen de una distribución normal.
+
+Esto indica que la variable duración de hospitalización no sigue una distribución normal, presentando una desviación considerable respecto al patrón esperado en una distribución normal teórica.
+
+Se complementa con este histograma:
+
+```{r}
+data_covid_diabetes |>  
+  ggplot(aes(x =duraci_hospita_diaz)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "skyblue", color = "black") +
+  geom_density(color = "red", size = 1)
+```
+
+Esto indica que la variable duración de hospitalización no sigue una distribución normal, presentando una desviación considerable respecto al patrón esperado en una distribución normal teórica.
+
+### Edad
+
+```{r}
+shapiro.test(data_covid_diabetes$Edad)
+```
+
+-   **Estadístico W: 0.97854**
+
+-   **Valor p: 1.745e-08 (equivalente a 0.00000001745)**
+
+Como el valor p es mucho menor que 0.05, se rechaza H₀.
+
+Esto significa que la variable Edad no sigue una distribución normal.
+
+Se complementa con este histograma:
+
+```{r}
+data_covid_diabetes |>  
+  ggplot(aes(x = Edad)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "beige", color = "brown") +
+  geom_density(color = "green", size = 1) 
+```
+
+# 2. Para datos categóricos
+
+**Comorbilidades**
+
+En este análisis se trabajará con las **variables correspondientes al bloque de comorbilidades**, las cuales representan las principales enfermedades crónicas y condiciones clínicas que pueden influir en la evolución de los pacientes con COVID-19 y diabetes mellitus. Estas variables permiten evaluar la presencia o ausencia de patologías relevantes que podrían actuar como factores de riesgo o modificadores del pronóstico clínico.
+
+## **Infarto de Miocadio y Diabetes mellitus complicada**
+
+Queremos evaluar si la proporción de pacientes con **diabetes complicada** que presentan infarto de miocardio en nuestro dataset difiere de la proporción esperada reportada en un estudio previo:
+
+```{r}
+table(data_covid_diabetes$diabetes_mell_complicada)
+```
+
+Resultado:
+
+-   495 pacientes con **diabetes no complicada**
+
+-   191 pacientes con **diabetes complicada**
+
+El estudio previo indica que la proporción esperada de **diabetes complicada** es **30,9%**.
+
+Referencia: <https://www.cell.com/heliyon/fulltext/S2405-8440(24)11777-X?_returnURL=>
+
+```{r}
+chisq.test(x = c(495, 191), p = c(0.309 ,0.691))
+```
+
+**El valor de chi-cuadrado X² = 546.88** indica una diferencia muy grande entre la proporción observada y la esperada.
+
+**El valor-p \< 0.0001** permite rechazar la hipótesis nula.
+
+**Conclusión:** Dado que el valor de *p* es menor a 0.05, rechazamos la hipótesis nula. Esto indica que las proporciones observadas son significativamente diferentes de las esperadas.\
+En otras palabras, existe una asociación estadísticamente significativa entre la diabetes y el infarto de miocardio en los pacientes con COVID-19.
+
+## **Pacientes con diabetes y enfermedad renal**:
+
+Queremos evaluar si la proporción de pacientes con **enfermedad renal** entre los pacientes con **diabetes** y COVID-19 difiere de la proporción esperada según un estudio previo.
+
+En nuestro dataset:
+
+```{r}
+table(data_covid_diabetes$enfer_renal)
+
+```
+
+Esto arroja:
+
+438 pacientes **sin enfermedad renal**
+
+248 pacientes **con enfermedad renal**
+
+El estudio previo indica que la proporción esperada de **enfermedad renal** en pacientes con diabetes es aproximadamente **9,6%**, y 90,4% sin enfermedad renal.
+
+Referencia: [10.15537/smj.2023.44.1.20220462](10.15537/smj.2023.44.1.20220462.)
+
+```{r}
+chisq.test(x = c(438, 248), p = c(0.096 ,0.904))
+
+```
+
+El valor de chi-cuadrado **X² = 2326.3** indica una diferencia muy grande entre la proporción observada y la esperada.
+
+El **valor-p \< 0.0001** permite **rechazar la hipótesis nula**.
+
+Conclusión: El valor-p es muchísimo menor que 0.05, por lo tanto, se rechaza la hipótesis nula. Esto significa que la distribución observada (438 vs 248) difiere significativamente de la distribución esperada (9.6% vs 90.4%). En otras palabras, la proporción de pacientes con enfermedad renal entre los casos de COVID-19 y diabetes es significativamente mayor de lo esperado, lo que indica una fuerte asociación estadística entre la diabetes y la enfermedad renal en pacientes con COVID-19.
