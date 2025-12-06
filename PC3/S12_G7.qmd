@@ -1,0 +1,417 @@
+---
+title: "S12_G7"
+format: html
+editor: visual
+---
+
+## Cargamos los paquetes
+
+```{r}
+install.packages("performance")
+```
+
+```{r}
+library(tidyverse)
+library(here)
+library(rio)
+library(gtsummary)
+library(car)
+library(survival)
+library(performance)
+```
+
+# Modelos univariados y multivariados aplicados a la dataset COVID-19_DIABETES
+
+# 1 Modelos univariados (no ajustados) vs. multivariados (ajustados)
+
+En este análisis utilizamos un dataset con 686 pacientes hospitalizados por COVID-19, que incluye una amplia variedad de características clínicas, de laboratorio y comorbilidades (85 variables en total). Dado que estos datos provienen de un estudio observacional, es esperable que múltiples factores influyan simultáneamente en el riesgo de fallecer durante la hospitalización.
+
+Por esa razón, **los modelos univariados, que analizan un predictor a la vez, no permiten obtener conclusiones definitivas**, ya que ignoran la posible influencia de variables de confusión. En cambio, los **modelos multivariados (ajustados)** permiten evaluar el efecto independiente de cada variable sobre el desenlace (fallecido), controlando por el resto de factores incluidos en el modelo.
+
+Por ejemplo, es poco realista pensar que solo una variable, como *saturación de oxígeno*, determine el riesgo de mortalidad. Factores como edad, severidad clínica, comorbilidades (diabetes, enfermedad renal, cardiovascular), marcadores de inflamación o parámetros respiratorios también pueden modificar dicho riesgo.
+
+## 1.1 Interpretación general del modelo ajustado
+
+En un modelo multivariado obtenemos medidas de efecto ajustadas como:
+
+-   **Odds Ratio ajustado (OR)** en regresión logística.
+
+-   **Hazard Ratio ajustado (HR)** en modelos de supervivencia (como Cox), si se modela tiempo hasta fallecer.
+
+Estas medidas indican la asociación entre una variable específica (por ejemplo, *dimero_d_mayor_3* o *pam_menor70*) y el desenlace, **controlando por otras covariables relevantes** como edad, severidad, comorbilidades o parámetros de laboratorio.
+
+## 1.2 Selección de variables para el modelo multivariado
+
+Dado que nuestra dataset tiene **85 variables**, no es recomendable incluir todas simultáneamente. Esto puede provocar:
+
+-   **Sobreajuste**
+
+-   **Multicolinealidad** (por ejemplo, leucocitos vs. linfocitos; glucosa vs. glucosa_mayor_500)
+
+-   **Problemas de convergencia en el modelo**
+
+Por eso la selección de variables es un paso esencial.
+
+### **1.2.1 Selección automática**
+
+En R podemos emplear métodos como:
+
+-   **Backward elimination**
+
+-   **Forward selection**
+
+-   **Stepwise selection**
+
+Estos usan criterios estadísticos, especialmente el **AIC**, donde valores más bajos indican un mejor equilibrio entre ajuste y complejidad.
+
+En nuestra dataset habría que tener especial cuidado porque hay:
+
+-   Muchas variables binarias derivadas de las mismas mediciones\
+    (ej.: *creatinina* y *puntuacion_creatinina*; *glucosa* y *glucosa_menor_60_o_mayor_500*).
+
+Variables redundantes o correlacionadas.
+
+Por eso se recomienda complementar la selección automática con la evaluación del **VIF**:
+
+-   VIF ≈ 1 : sin colinealidad
+
+-   VIF 1–5 : aceptable
+
+-   VIF \> 5–10 : colinealidad alta (no deben ir juntas en el modelo)
+
+Ejemplo típico para nuestra base:
+
+-   leucocitos y globulos_blancos_menor_1_8_o_mayor_4_8 no deben ir en el mismo modelo.
+
+-   creatinina y puntuacion_creatinina tampoco.
+
+### **1.2.2 Selección intencionada de variables**
+
+La selección intencionada de variables combina criterios estadísticos y juicio clínico, y se desarrolla en tres pasos:
+
+1.  **Análisis univariado:**\
+    Se evalúa cada variable por separado. Aquellas con p \< 0.20 o que son clínicamente importantes se incluyen en el modelo inicial, aunque no sean significativas.
+
+2.  **Construcción y depuración del modelo multivariado:**\
+    Las variables seleccionadas se incorporan a un modelo preliminar. Luego se retiran las que no son significativas (p \> 0.05) y se comparan el modelo completo y el reducido mediante pruebas como LR Test o criterios AIC/BIC para asegurar que la simplificación no empeore el modelo.
+
+3.  **Evaluación de interacciones:**\
+    Finalmente, se exploran posibles interacciones entre variables que, al combinarse, puedan modificar su efecto sobre el desenlace.
+
+## 2. Ejemplos de análisis univariado y multivariado en una regresión logística
+
+## 2.1 El dataset para este ejercicio
+
+```{r}
+covid_diabetes <- import(here("data", "covid19_diabetes_final.csv"))
+```
+
+le damos un vistazo a los datos
+
+```{r}
+head(covid_diabetes)
+```
+
+```{r}
+str(covid_diabetes)
+```
+
+## 2.2 Análisis univariado
+
+En esta sección se estimarán los **odds ratios (OR) no ajustados** para cada variable de interés, evaluando su asociación individual con el desenlace (*fallecido*). El análisis se realizará mediante modelos de regresión logística simples, en los que cada predictor se evalúa por separado, sin ajustar por otras covariables.
+
+Antes de ejecutar los modelos, es necesario **definir correctamente las categorías de referencia** para las variables categóricas en tu base de datos. Esto se hace usando `mutate()` junto con `relevel()`, asegurando que la interpretación de los OR sea coherente con la categoría base seleccionada. El objeto resultante se guardará como `covid_1`.
+
+```{r}
+covid_1 <- covid_diabetes |> 
+  mutate(
+    fallecido = relevel(as.factor(fallecido), ref = "No"),
+    diabetes_complicada = relevel(as.factor(diabetes_complicada), ref = "No"),
+    enfer_renal = relevel(as.factor(enfer_renal), ref = "No"),
+    acv = relevel(as.factor(acv), ref = "No")
+  ) |> 
+  na.omit()
+
+```
+
+Una vez definidas las referencias, se genera la tabla del análisis univariado mediante `tbl_uvregression()`, especificando:
+
+-   la variable dependiente (`fallecido`)
+
+-   Las variables independientes a evaluar
+
+-   el método (`glm` con familia binomial para regresión logística)
+
+-   el formato de los OR
+
+-   los intervalos de confianza del 95%
+
+-   los valores p
+
+```{r}
+tabla_log_uni <- covid_1 |>
+  tbl_uvregression(
+    include = c(edad_2, acv, diabetes_complicada, enfer_renal, pam, dimero_d, leucocitos, severidad),
+    y = fallecido,
+    method = glm,
+    method.args = list(family = binomial),
+    exponentiate = TRUE,
+    conf.int = TRUE,
+    hide_n = TRUE,
+    add_estimate_to_reference_rows = FALSE,
+    pvalue_fun = ~ style_pvalue(.x, digits = 3),
+    estimate_fun = ~ style_number(.x, digits = 2),
+    label = list(
+      edad_2 ~ "Edad (años)",
+      acv ~ "Accidente cerebrovascular previo",
+      diabetes_complicada ~ "Diabetes complicada",
+      enfer_renal ~ "Enfermedad renal",
+      pam ~ "Presión arterial media (mmHg)",
+      dimero_d ~ "Dímero D (mg/L)",
+      leucocitos ~ "Leucocitos (x10⁹/L)",
+      severidad ~ "Puntaje de severidad"
+    )
+  ) |>
+  bold_labels() |> 
+  bold_p(t = 0.05) |> 
+  modify_header(estimate = "**OR no ajustado**", p.value = "**Valor P**")
+```
+
+Visualizamos la tabla:
+
+```{r}
+tabla_log_uni
+```
+
+**Interpretación de los resultados del análisis univariado**
+
+El análisis univariado permitió evaluar la asociación individual entre cada variable y la probabilidad de fallecer durante la hospitalización. Los resultados se expresan como **odds ratios (OR) no ajustados**, acompañados de sus intervalos de confianza del 95% (IC 95%) y valores p.
+
+-   **Edad (años) – OR = 1.06; p \< 0.001**
+
+Por cada incremento de un año en la edad, las *odds* de fallecer aumentan en un 6%. La asociación es estadísticamente significativa, indicando que la edad es un predictor importante de mortalidad.
+
+-   **Accidente cerebrovascular previo – OR = 4.32; p = 0.057**
+
+Los pacientes con antecedente de ACV tienen 4.3 veces mayores odds de fallecer que aquellos sin dicho antecedente. Aunque el OR es elevado, el valor p (0.057) es ligeramente mayor que 0.05, por lo que no se considera estadísticamente significativo, aunque muestra una tendencia importante que podría ser relevante clínicamente.
+
+-   **Diabetes complicada – OR = 0.78; p = 0.225**
+
+Los pacientes con diabetes complicada presentan 22% menores odds de fallecer comparados con quienes no la tienen. Sin embargo, esta asociación no es estadísticamente significativa, por lo que no se puede concluir que exista una relación real entre diabetes complicada y mortalidad en este análisis univariado.
+
+-   **Enfermedad renal – OR = 1.59; p = 0.021**
+
+Los pacientes con enfermedad renal tienen 1.6 veces mayores odds de fallecer respecto a quienes no presentan esta condición. El valor p es \<0.05, por lo que se considera una asociación estadísticamente significativa.
+
+-   **Presión arterial media (mmHg) – OR = 0.98; p \< 0.001**
+
+Por cada disminución de 1 mmHg en la presión arterial media (PAM), las odds de fallecer incrementan en aproximadamente 2% (ya que un OR menor a 1 indica efecto protector al aumentar la PAM). Este resultado es estadísticamente significativo, sugiriendo que valores más bajos de PAM se asocian con mayor riesgo de mortalidad.
+
+-   **Dímero D (mg/L) – OR = 1.08; p \< 0.001**
+
+Por cada aumento de 1 mg/L en el Dímero D, las odds de fallecer aumentan en 8%. La asociación es estadísticamente significativa, apoyando el rol del Dímero D como biomarcador pronóstico
+
+-   **Leucocitos (x10⁹/L) – OR = 1.01; p = 0.284**
+
+Un incremento en la cuenta de leucocitos se asocia con un ligero aumento del 1% en las odds de fallecer, aunque esta relación no es significativa (p \> 0.05). No se evidencia asociación entre el nivel de leucocitos y la mortalidad en el análisis univariado.
+
+-   **Puntaje de severidad – OR = 1.62; p \< 0.001**
+
+Por cada punto adicional en el puntaje de severidad, las odds de fallecer aumentan en 62%. Se trata de una asociación fuerte y estadísticamente significativa, lo que indica que la severidad clínica del paciente es un predictor importante de mortalidad.
+
+## **2.3 Análisis multivariado**
+
+Dado que la base contiene un gran número de variables clínicas, demográficas y de laboratorio (85 en total), se empleó una estrategia de **selección automática de variables** para identificar los predictores independientes del desenlace (mortalidad hospitalaria). Para ello se compararon tres enfoques: eliminación hacia atrás (*backward elimination*), selección hacia adelante (*forward selection*) y selección paso a paso (*stepwise selection*).
+
+### Paso 1. Ajuste del modelo inicial
+
+Como punto de partida, se ajustó un modelo de regresión logística binaria que incluyó las variables consideradas clínicamente relevantes o que mostraron asociación en el análisis univariado. Este modelo sirvió como base para aplicar los procedimientos de selección automática:
+
+```{r}
+var_modelo = glm(
+  fallecido ~ edad_2 + acv + diabetes_complicada + enfer_renal +
+    pam + dimero_d + leucocitos + severidad,
+  data = covid_1,
+  family = binomial(link = "logit")
+)
+
+```
+
+### Paso 2a. Eliminación hacia atrás (Backward elimination)
+
+```{r}
+multi_backward <- var_modelo|>
+  step(direction = "backward", trace = FALSE)
+```
+
+### Paso 2b. Selección hacia adelante (Forward selection)
+
+```{r}
+multi_forward <- var_modelo |>
+  step(direction = "forward", trace = FALSE)
+```
+
+### Paso 2c. Selección paso a paso (Stepwise selection)
+
+```{r}
+multi_stepwise <- var_modelo |>
+  step(direction = "both", trace = FALSE)
+```
+
+### Paso 3. Comparación del AIC
+
+Se evaluó el criterio de información de Akaike (AIC) para determinar qué modelo presenta el mejor equilibrio entre ajuste y complejidad.
+
+```{r}
+summary(multi_backward)
+
+summary(multi_forward)
+
+summary(multi_stepwise)
+```
+
+## 2.4 Conclusión del proceso de selección
+
+Los modelos ajustados mediante **backward elimination** y **stepwise selection** presentaron el menor valor de AIC, indicando un mejor ajuste en comparación con el modelo obtenido con selección hacia adelante. Además, ambos métodos retuvieron exactamente el mismo conjunto de variables, lo que refuerza la estabilidad del modelo final.
+
+En cambio, la selección hacia adelante mantuvo más variables de las necesarias, sin mejora en el AIC.
+
+## 2.5 Evaluación de colinealidad
+
+La colinealidad entre predictores se evaluó mediante el factor de inflación de la varianza (VIF), utilizando la función `check_collinearity()` del paquete *performance*.
+
+```{r}
+performance::check_collinearity(multi_backward)
+performance::check_collinearity(multi_forward)
+performance::check_collinearity(multi_stepwise)
+```
+
+## 2.6 Conclusión
+
+Los modelos generados mediante eliminación hacia atrás (backward elimination) y selección paso a paso (stepwise selection) mostraron valores de VIF bajos (entre 1.01 y 1.40) y cercanos a 1, lo que indica ausencia de colinealidad relevante entre las variables retenidas (edad_2, acv, enfermedad renal, PAM y severidad).
+
+En contraste, el modelo completo que incluía todas las variables (forward/complete model) presentó VIF más elevados para algunas variables continuas, como dímero D (VIF = 1.26) y severidad (VIF = 1.71). Aunque estos valores no representan colinealidad grave, sí indican mayor relación entre predictores, lo que puede afectar la estabilidad del modelo. Este comportamiento explica por qué variables como *diabetes complicada*, *dímero D* y *leucocitos* no fueron retenidas en los modelos obtenidos por backward o stepwise: su aporte independiente fue bajo y aumentaban la complejidad del modelo sin mejorar el ajuste.
+
+En consecuencia, tanto backward como stepwise convergieron hacia una estructura más parsimoniosa y estable, con colinealidad muy baja.
+
+## 2.7 Modelo final
+
+Con base en:
+
+-   el menor AIC (modelo reducido: **AIC = 566.42** vs. modelo completo: **AIC = 571.36**),
+
+-   la estabilidad entre métodos (backward y stepwise seleccionaron exactamente el mismo modelo),
+
+-   y la baja colinealidad observada (VIF ≈ 1 en todas las variables retenidas),
+
+se concluye que el modelo óptimo es el obtenido mediante eliminación hacia atrás o selección paso a paso.
+
+El modelo final incluye cinco variables independientes:
+
+1.  **Edad (edad_2)**
+
+2.  **Accidente cerebrovascular previo (ACV)**
+
+3.  **Enfermedad renal**
+
+4.  **Presión arterial media (PAM)**
+
+5.  **Puntaje de severidad**
+
+Todas estas variables mostraron una asociación estadísticamente significativa con la mortalidad (p \< 0.05).
+
+Este modelo será utilizado para reportar los **odds ratios ajustados**, sus intervalos de confianza y su interpretación clínica en el análisis multivariado definitivo.
+
+# 3 Reporte del análisis univariado y multivariado
+
+En esta sección se presentan los resultados del análisis univariado (no ajustado) y del análisis multivariado (modelo final), ambos basados en regresión logística binaria para evaluar los factores asociados al fallecimiento en pacientes con COVID-19.
+
+## 3.1. Análisis univariado (no ajustado)
+
+En el análisis univariado se evaluó la asociación individual entre cada variable independiente y el desenlace (fallecido). Para ello se empleó la función `tbl_uvregression()` y se estimaron odds ratios no ajustados (OR crudos), intervalos de confianza del 95% y valores p.
+
+```{r}
+tabla_univ_covid_diabetes <- covid_1 |>
+  tbl_uvregression(
+    include = c(edad_2, acv, diabetes_complicada, enfer_renal,
+                pam, dimero_d, leucocitos, severidad),
+    y = fallecido,
+    method = glm,
+    method.args = list(family = binomial),
+    exponentiate = TRUE,
+    conf.int = TRUE,
+    hide_n = TRUE,
+    pvalue_fun = ~ style_pvalue(.x, digits = 3),
+    estimate_fun = ~ style_number(.x, digits = 2),
+    label = list(
+      edad_2 ~ "Edad (años)",
+      acv ~ "Accidente cerebrovascular",
+      diabetes_complicada ~ "Diabetes complicada",
+      enfer_renal ~ "Enfermedad renal",
+      pam ~ "Presión arterial media",
+      dimero_d ~ "Dímero-D",
+      leucocitos ~ "Leucocitos",
+      severidad ~ "Severidad clínica"
+    )
+  ) |>
+  bold_labels() |>
+  bold_p(t = 0.05) |>
+  modify_header(estimate = "**OR**", p.value = "**Valor P**")
+
+```
+
+## 3.2. Análisis multivariado (modelo final ajustado)
+
+```{r}
+tabla_multi_covid_diabetes <- glm(
+  fallecido ~ edad_2 + acv + enfer_renal + pam + severidad,
+  family = binomial(link = "logit"),
+  data = covid_1
+) |>
+  tbl_regression(
+    exponentiate = TRUE,
+    conf.int = TRUE,
+    pvalue_fun = ~ style_pvalue(.x, digits = 3),
+    estimate_fun = ~ style_number(.x, digits = 2),
+    label = list(
+      edad_2 ~ "Edad (años)",
+      acv ~ "Accidente cerebrovascular",
+      enfer_renal ~ "Enfermedad renal",
+      pam ~ "Presión arterial media",
+      severidad ~ "Severidad clínica"
+    )
+  ) |>
+  bold_labels() |>
+  bold_p(t = 0.05) |>
+  modify_header(estimate = "**OR ajustado**", p.value = "**Valor P**")
+```
+
+## 3.3. Tabla final (univariado + multivariado lado a lado)
+
+```{r}
+tabla_final_covid_diabetes <- 
+  tbl_merge(
+    list(tabla_univ_covid_diabetes, tabla_multi_covid_diabetes),
+    tab_spanner = c("**Univariado**", "**Multivariado**")
+  )
+
+tabla_final_covid_diabetes
+```
+
+## 3.4 Interpretamos
+
+**La edad** se asoció de manera independiente con el riesgo de fallecer. Tras el ajuste, por cada año adicional de edad, las *odds* de morir aumentan en un **2%** (OR ajustado = 1.02; IC95%: 1.01–1.04; p = 0.009). Aunque en el análisis univariado el incremento parecía mayor (OR = 1.06), el efecto se redujo ligeramente al controlar por otras variables clínicas.
+
+Los pacientes con **antecedente de accidente cerebrovascular (ACV)** tuvieron un riesgo significativamente más alto de mortalidad. Luego del ajuste, quienes presentaban ACV previo mostraron unas *odds* de fallecer **6.58 veces mayores** que quienes no tenían este antecedente (IC95%: 1.38–34.98; p = 0.017). En el análisis univariado el efecto no alcanzó significancia, pero en el modelo ajustado sí se identificó como un predictor importante.
+
+La **enfermedad renal** también se asoció de manera significativa con el desenlace. Los pacientes con enfermedad renal tuvieron un aumento del **65%** en las odds de fallecer (OR ajustado = 1.65; IC95%: 1.06–2.60; p = 0.029), resultado consistente con el análisis univariado.
+
+La **presión arterial media (PAM)** mostró un efecto protector pequeño pero significativo: por cada mmHg adicional, las *odds* de fallecer disminuyen en aproximadamente **2%** (OR ajustado = 0.98; IC95%: 0.97–0.99; p \< 0.001). Este efecto se mantuvo tanto en el análisis univariado como en el multivariado.
+
+La **severidad clínica** fue uno de los predictores más fuertes. Por cada punto adicional en el puntaje de severidad, las *odds* de fallecer aumentan en **48%** (OR ajustado = 1.48; IC95%: 1.31–1.68; p \< 0.001), manteniendo significancia y fuerza del efecto incluso después del ajuste.
+
+Por otro lado, **diabetes complicada**, **Dímero-D** y **leucocitos** mostraron asociaciones significativas en el análisis univariado o tendencias importantes; sin embargo, **no permanecieron en el modelo final** por no conservar una contribución independiente tras el ajuste por las demás variables.
+
+## **En conclusión:**
+
+Tras el ajuste multivariado, la edad, el antecedente de ACV, la enfermedad renal, la presión arterial media y la severidad clínica se identificaron como predictores independientes de mortalidad. La edad incrementa ligeramente el riesgo; el ACV previo y la enfermedad renal elevan significativamente las odds de fallecer; la PAM actúa como un factor protector; y la severidad clínica es el predictor más fuerte del modelo. Diabetes complicada, Dímero-D y leucocitos no mostraron efecto independiente al ajustar por las demás variables.

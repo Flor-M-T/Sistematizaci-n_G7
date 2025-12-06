@@ -1,0 +1,363 @@
+---
+title: "PC3_1"
+format: html
+editor: visual
+---
+
+### Instalamos y cargamos paquetes
+
+```{r}
+install.packages("broom")
+install.packages("survival")
+install.packages("survminer")
+install.packages("ggsurvfit")
+```
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(survival)
+library(survminer)
+library(gtsummary)
+library(broom)
+library(here)
+library(rio)
+library(ggsurvfit)
+```
+
+# 1 Analizando datos de tiempo a evento
+
+El análisis de supervivencia, también conocido como análisis de tiempo a evento, es empleado para estudios donde los investigadores realizan un seguimiento a los pacientes hasta que ocurra un evento. En este caso, corresponde a un estudio de pacientes hospitalizados con COVID-19 y diabetes.
+
+El evento, en este estudio epidemiológico, corresponde a **fallecimiento durante la hospitalización** por COVID-19 en pacientes con diabetes.
+
+El análisis de supervivencia incluye datos de tiempo (dado que se hace seguimiento). En este estudio, los datos de tiempo corresponden a **días de hospitalización**, desde el ingreso hasta el evento (fallecimiento) o censura (alta hospitalaria).
+
+En esta practica abordaremos 2 de las principales técnicas para realizar análisis de supervivencia:
+
+-   Análisis de supervivencia usando el método de Kaplan-Meier
+
+-   Regresión de riesgos proporcionales (PH) de Cox
+
+## 1.1 Censura
+
+Una característica clave en datos de supervivencia es la censura para cada paciente. En este estudio de COVID-19, la censura puede ocurrir por las siguientes razones: 1) Alta hospitalaria con vida 2) Transferencia a otro centro 3) El paciente permanece hospitalizado al final del periodo de estudio. Todos estos son ejemplos de "censura a la derecha", dado que ocurren luego del inicio del estudio (ingreso hospitalario).
+
+# 2 Estimaciones de supervivencia usando el método de Kaplan-Meier
+
+## 2.1 El dataset para este ejercicio
+
+El dataset `covid19_diabetes` contiene datos de **686 pacientes** hospitalizados con COVID-19 y diabetes. Para el primer ejercicio haremos uso de las siguientes variables:
+
+-   `tiempo_d`: tiempo de supervivencia observado en días (días de hospitalización)
+
+-   `estado`: indica si el paciente tuvo el evento (falleció) o si fue censurado (0=censura, 1=evento)
+
+-   `severidad_grupo`: nivel de severidad clínica (Baja, Media, Alta)
+
+    Cargando el dataset
+
+```{r}
+covid19_diabetes <- import(here("data", "covid19_diabetes_final.csv"))
+```
+
+Vistazo al dataset
+
+```{r}
+str(covid19_diabetes)
+```
+
+```{r}
+#Prepararamos los datos
+datos_supervivencia <-covid19_diabetes %>%
+  mutate(
+    # Convertimos variable de evento a numérica (1 = Sí, 0 = No)
+    estado = ifelse(fallecido == "Sí", 1, 0),
+    # Asegurar que el tiempo sea numérico
+    tiempo_d = dias_hospital,
+    # Convertimos otras variables categóricas a factores
+    severidad_grupo = factor(case_when(
+      severidad <= 3 ~ "Baja",
+      severidad <= 6 ~ "Media", 
+      severidad > 6 ~ "Alta"
+    ))
+  )
+```
+
+```{r}
+datos_supervivencia |> 
+  select(tiempo_d, estado, severidad_grupo) |> 
+  summary()
+```
+
+## 2.2 El desenlace en el análisis de supervivencia
+
+Kaplan-Meier estima la probabilidad de supervivencia para distintos puntos de tiempo. En R, usamos la función `Surv()` para crear la variable "respuesta" o desenlace. Este tipo de desenlace incluye a su vez estado del participante (con el evento o sin el evento) y tiempo.
+
+```{r}
+Surv(datos_supervivencia$tiempo_d, datos_supervivencia$estado)
+```
+
+**Interpretación específica para COVID-19:**
+
+-   **Número sin `+`**: Paciente falleció durante la hospitalización
+
+-   **Número con `+`**: Paciente fue dado de alta vivo (censurado)
+
+La variable "respuesta" la incluimos en la función `survfit` para estimar la probabilidad de supervivencia (una curva) usando el método de Kaplan-Meier. Aquí estimamos la curva de supervivencia global sin considerar ningún predictor. Es por ello que añadimos "\~ 1" a la fórmula. Esa parte será reemplazada más adelante por algún predictor o covariable de interés.
+
+```{r}
+km = survfit(Surv(tiempo_d, estado) ~ 1, data = datos_supervivencia)
+```
+
+¿Qué hay dentro del objeto km?
+
+```{r}
+str(km)
+```
+
+## 2.3 Gráficos de Kaplan-Meier
+
+La información contenida en el objeto creado con las estimaciones puede ser mejor visualizada en los gráficos de Kaplan-Meier.
+
+```{r}
+survfit2(Surv(tiempo_d, estado) ~ 1, data = datos_supervivencia) |>  
+  ggsurvfit() +
+  labs(
+    x = "Días",
+    y = "Probabilidad de supervivencia global"
+  ) +
+  add_censor_mark()
+```
+
+La función `add_confidence_interval()` añade los intervalos de confianza al 95% (sombreado en gris) para las estimaciones de probabilidad de supervivencia.
+
+```{r}
+survfit2(Surv(tiempo_d, estado) ~ 1, data = datos_supervivencia) |>  
+  ggsurvfit() +
+  labs(
+    x = "Días de Hospitalización",
+    y = "Probabilidad de Supervivencia"
+  ) + 
+  add_censor_mark() +
+  add_confidence_interval() +
+  add_risktable()
+
+```
+
+**¿Cómo interpretar?**
+
+En la gráfica de Kaplan-Meier generada a partir de los datos de **686 pacientes hospitalizados con COVID-19 y diabetes**, se muestra la **probabilidad de supervivencia global** a lo largo del tiempo (días de hospitalización). La curva es escalonada, ya que representa una función de supervivencia estimada por intervalos de tiempo; cada escalón indica la ocurrencia de un evento (fallecimiento), reduciendo la probabilidad acumulada de supervivencia.
+
+**INTERPRETACIÓN**: Las líneas horizontales reflejan la duración de los intervalos de tiempo entre eventos, mientras que las caídas verticales indican la magnitud de la reducción en la probabilidad de supervivencia al producirse un evento.
+
+La curva de Kaplan-Meier demostró una disminución rápida en la supervivencia durante la hospitalización por COVID-19 en pacientes con diabetes. La probabilidad de supervivencia fue del 75% a los 10 días, 50% a los 20 días y 25% a los 30 días de hospitalización. La mediana de supervivencia fue de aproximadamente 20 días, con una tasa de mortalidad global del 24.5%.
+
+## 2.4 Estimación de la supervivencia a "x" tiempo (dias)
+
+Al analizar datos de supervivencia es común que nos preguntemos, por ejemplo, ¿Cuál es la probabilidad de supervivencia después de 1 año de seguimiento? Esto lo calculamos a partir de usar la función survfit(), añadiendo el argumento times.
+
+```{r}
+# Tiempos clínicos importantes en hospitalización
+tiempos_clinicos <- c(7, 14, 21, 30)  # 1, 2, 3 semanas y 1 mes(30 DIAS)
+```
+
+```{r}
+summary(survfit(Surv(tiempo_d, estado) ~ 1, data = datos_supervivencia), 
+        times = tiempos_clinicos)
+```
+
+-   La probabilidad de supervivencia a la primera semana de hospitalización es del 79.2%. Dicho de otra manera, 79.2% de los pacientes estuvieron vivos 7 días después del ingreso hospitalario.
+
+-   La probabilidad de supervivencia a las 2 semanas es del 60.2%, y a los 30 días del 26.5%.
+
+```{r}
+survfit2(Surv(tiempo_d, estado) ~ 1, data = datos_supervivencia) |>
+  ggsurvfit() +
+  labs(
+    x = "Días",
+    y = "Probabilidad de supervivencia global"
+  ) + 
+  add_confidence_interval() +
+  add_risktable() +
+  add_quantile(x_value = 7, linewidth = .7)
+```
+
+La **línea vertical en el día 7** nos permite evaluar específicamente la **supervivencia a la primera semana** de hospitalización, un tiempo crítico en la evolución del COVID-19.
+
+### 2.5 Estimación mediana del tiempo de supervivencia
+
+Otro dato importante a estimar es la mediana de supervivencia. Típicamente, los datos de supervivencia no tendrán una distribución normal. Asi que, la mediana es preferida sobre la media aritmética.
+
+```{r}
+survfit(Surv(tiempo_d, estado) ~ 1, data = datos_supervivencia)
+```
+
+-   La mediana de supervivencia corresponde a la probabilidad de supervivencia de 0.5. Para este dataset, la mediana es de 18 días. Esto significa que el 50% de los pacientes hospitalizados con COVID-19 y diabetes fallecieron antes de los 18 días de hospitalización.
+
+```{r}
+survfit2(Surv(tiempo_d, estado) ~ 1, data = datos_supervivencia) |>
+  ggsurvfit() +
+  labs(
+    x = "Días",
+    y = "Probabilidad de supervivencia global"
+  ) + 
+  add_confidence_interval() +
+  add_risktable() +
+  add_quantile(y_value = 0.5, linewidth = .7)
+```
+
+Este gráfico de Kaplan-Meier evalúa específicamente la **supervivencia de mas de 2 semanas de hospitalización** (día 18)
+
+## ¿Cómo reportamos?
+
+Usando el paquete gtsummary podemos generar una tabla con datos de la supervivencia al año.
+
+```{r}
+theme_gtsummary_language(language = "es")
+
+survfit(Surv(tiempo_d, estado) ~ 1, data = datos_supervivencia) %>% 
+  tbl_survfit(
+    times = c(7, 14, 21, 30),
+    label_header = "**Supervivencia hospitalaria (IC 95%)**"
+  )
+```
+
+**Interpretación:** El análisis de supervivencia hospitalaria mostró que la probabilidad de supervivencia fue del **79% (IC95%: 75-83%) a los 7 días**, disminuyendo al **60% (IC95%: 54-67%) a los 14 días**, al **43% (IC95%: 36-52%) a los 21 días** y al **27% (IC95%: 18-39%) a los 30 días** de hospitalización.
+
+```{r}
+survfit(Surv(tiempo_d, estado) ~ 1, data = datos_supervivencia) |>  
+  tbl_survfit(
+    probs = 0.5,
+    label_header = "**Mediana de supervivencia (IC 95%)**"
+  )
+```
+
+La mediana del tiempo de supervivencia fue de 18 días (IC95%: 16-22), lo que significa que el 50% de los pacientes fallecieron antes de completar las primeras 3 semanas de hospitalización.
+
+## 1.1 Comparando tiempos de supervivencia entre dos grupos
+
+En el conjunto de datos `covid19_diabetes` se incluyen pacientes con diferentes características clínicas. Un análisis de interés consiste en evaluar si los tiempos de supervivencia difieren significativamente entre grupos. Para ello, se utiliza la función `survdiff()`, que permite aplicar la prueba de log-rank y estimar si existen diferencias en las curvas de supervivencia
+
+```{r}
+survdiff(Surv(tiempo_d, estado) ~ severidad_grupo, data = datos_supervivencia)
+```
+
+-   El valor de p = 4e-12 (p \< 0.001) de la prueba de log-rank indica que existe una diferencia estadísticamente significativa en la supervivencia hospitalaria entre los grupos de severidad. Los pacientes con severidad Alta mostraron 48 fallecimientos observados versus 22.3 esperados, mientras que los de severidad Baja presentaron solo 39 fallecimientos observados versus 77 esperados, sugiriendo que la severidad alta se asocia con mayor riesgo de mortalidad.
+
+El siguiente gráfico de Kaplan-meier muestra el resultado de la prueba de log-rank.
+
+```{r}
+survfit2(Surv(tiempo_d, estado) ~ severidad_grupo, data = datos_supervivencia) |>
+  ggsurvfit() +
+  labs(
+    x = "Días de hospitalización",
+    y = "Probabilidad de supervivencia"
+  ) + 
+  add_confidence_interval() +
+  add_risktable() +
+  add_pvalue(caption = "Log-rank {p.value}")
+```
+
+# 3. Modelo de Regresión de Cox para  Dataset de COVID-19
+
+La prueba de log-rank no ofrece una medida de efecto y solo permite evaluar una única variable independiente a la vez. Sin embargo, en investigación suele ser necesario cuantificar el tamaño del efecto de una o varias variables, e incluso realizar un análisis multivariable. Para este propósito, el modelo de **regresión de Cox** es una herramienta adecuada para analizar datos con desenlaces de supervivencia.
+
+En R, este modelo se puede ajustar utilizando la función `coxph()` del paquete **survival**.
+
+## 3.1 El dataset para este ejercicio
+
+el dataset para esta parte del análisis incluye información de **686 pacientes hospitalizados**.\
+Entre las variables más relevantes se encuentran:
+
+-    `dias_hospital`: días de hospitalización
+
+-   `fallecido`: indica si el paciente falleció (`Sí` o `No`)
+
+-    `diabetes_complicada`: presencia de diabetes mellitus sin complicaciones
+
+-    `enfer_renal`: presencia de enfermedad renal
+
+-    `pam`: presión arterial media
+
+-   `dimero_d`: valor del dímero D (mg/L)
+
+-   `leucocitos`: recuento de glóbulos blancos (10³/μL)
+
+-    `edad_2`: edad del paciente (en años)
+
+-    `severidad`: puntaje de severidad clínica (anteriormente hemos agrupado esta variable en 3 grupos)
+
+cargamos los datos
+
+```{r}
+covid_diabetes_cox <- import(here("data", "covid19_diabetes_final.csv"))
+```
+
+## Usaremos la variable SATURACIÓN DE O2 MENOR A 94 como la variable independiente de interés (Relevante en el contexto Covid)
+
+```{r}
+covid_diabetes_cox$fallecido_bin <- ifelse(covid_diabetes_cox$fallecido == "Sí", 1, 0)
+```
+
+`Surv(dias_hospital, fallecido_bin)` crea un objeto de supervivencia, donde:
+
+-    `dias_hospital` es el tiempo hasta el evento (o censura)
+
+-    `fallecido_bin = 1` indica que el paciente **falleció**,
+
+-    `fallecido_bin = 0` indica que el paciente **sobrevivió o fue censurado**.
+
+```{r}
+coxph(Surv(dias_hospital, fallecido_bin) ~ sat_o2_menor94,
+                    data = covid_diabetes_cox)
+```
+
+## 3.2 Interpretación y reporte
+
+Entre los resultados, el **valor p = 0.839** indica que **NO existe una asociación estadísticamente significativa** entre la covariable **saturación de oxígeno menor a 94%** y el fallecimiento. El coeficiente y su intervalo de confianza al 95%, ambos en escala exponenciada, son las medidas de interés y son las que se reportan en un informe científico. Estas tablas de resultados pueden obtenerse con la función `tbl_regression()` del paquete `gtsummary`, utilizando la opción `exponentiate = TRUE` para mostrar la razón de riesgos (hazard ratio, HR) en lugar del logaritmo del riesgo
+
+```{r}
+coxph(Surv(dias_hospital, fallecido_bin) ~ sat_o2_menor94,
+                    data = covid_diabetes_cox) %>% 
+  tbl_regression(exp = TRUE) 
+```
+
+El análisis de regresión de Cox mostró que la saturación de oxígeno menor al 94% no se asoció significativamente con la mortalidad hospitalaria (HR = 1.03; IC95%: 0.76-1.40; p = 0.8). Aunque se observó un riesgo ligeramente mayor en pacientes con hipoxemia, el intervalo de confianza que incluye el valor 1 indica que esta asociación no es estadísticamente significativa.
+
+### 3.3 Reporte para multiple variables
+
+Es frecuente que en un estudio que incluya datos de supervivencia sea de interés evaluar múltiples covariables. En R, usando la función `tbl_uvregression()` podemos generar modelos univariables simples para todas las covariables de interés. A cambio, obtenemos la HR cruda para todas las covariables.
+
+```{r}
+tabla_cox_covid <- covid_diabetes_cox |>
+  tbl_uvregression(
+    include = c(edad_2,acv, diabetes_complicada, enfer_renal, pam, dimero_d, leucocitos, severidad),
+    y = Surv(dias_hospital, fallecido_bin),
+    method = coxph,
+    exponentiate = TRUE,
+    conf.int = TRUE,
+    hide_n = TRUE,
+    add_estimate_to_reference_rows = FALSE,
+    pvalue_fun = ~ style_pvalue(.x, digits = 3),
+    estimate_fun = ~ style_number(.x, digits = 2),
+    label = list(
+      edad_2 ~ "Edad (años)",
+      acv ~ "acv" ,
+      diabetes_complicada ~ "Diabetes complicada",
+      enfer_renal ~ "Enfermedad renal",
+      pam ~ "Presión arterial media (mmHg)",
+      dimero_d ~ "Dímero D (mg/L)",
+      leucocitos ~ "Leucocitos (10³/μL)",
+      severidad ~ "Puntuación de severidad"
+    )
+  ) |>
+  bold_p(t = 0.05) |>
+  modify_header(estimate = "**HR no ajustado**", p.value = "**Valor P**")
+```
+
+Visualizamos la tabla
+
+```{r}
+tabla_cox_covid
+```
