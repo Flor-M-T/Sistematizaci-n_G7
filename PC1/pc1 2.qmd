@@ -1,0 +1,178 @@
+---
+title: "PC 1 actividad 2"
+author: 
+group: nro 7
+format: html
+---
+
+## ACTIVIDAD 2 - PC1
+
+INTEGRANTES:
+
+\-
+
+\-
+
+# Importación del dataset asignado:
+
+Se nos asignó la data covid_19_diabates, para ello debemos importarla a la consola de rstudio para empezar a realizar su limpieza
+
+a- Empezamos instalando y cargando los paquetes que usaremos
+
+```{r}
+install_formats("here")
+install_formats("rio")
+```
+
+```{r}
+library(here)
+library(rio)
+```
+
+b- Importación del data
+
+```{r}
+covid19_diabetes = import(here("data", "covid_19_diabetes.csv"))
+```
+
+# Limpieza del dataset
+
+*a- Empezamos instalando y cargando los paquetes que usaremos*
+
+```{r}
+install.packages("tidyverse")
+install.packages("janitor")
+```
+
+```{r}
+library(tidyverse)
+library(janitor)
+```
+
+*b - Inspeccionamos el dataset*
+
+```{r}
+dim(covid19_diabetes)
+```
+
+Observamos que covid19_diabetes tiene 686 observaciones y 85 variables.
+
+*c- Corregimos nombres de variables*
+
+```{r}
+covid19_diabetes_1 = clean_names(covid19_diabetes)
+```
+
+```{r}
+names(covid19_diabetes_1)
+```
+
+*d- Renombrar variables*
+
+```{r}
+library(dplyr)
+```
+
+```{r}
+covid19_diabetes_2 <- covid19_diabetes_1 %>%
+  rename(
+    hospitalizado   = pac_fue_hospital,
+    fallecido       = desenla_fallecido,
+    dias_hospital   = duraci_hospita_diaz,
+    infarto_miocardio = infacto_mioc,
+    insuf_card_congestiva = falla_card_conges,
+    enf_vascular_periferica = enfer_vascu_periferica,
+    epoc            = enf_pulmonar_obstruc_cronica,
+    diabetes_simple = diabetes_mell_simple,
+    diabetes_complicada = diabetes_mell_complicada,
+    acv             = accidente_cerebrovascular,
+    sat_o2          = saturacion_o2,
+    sat_o2_menor94  = saturacion_o2_menor_94,
+    pam             = presion_arterial_media,
+    pam_menor70     = presion_arterial_media_menor_70,
+    bun             = nitrogeno_ureico_sangre,
+    creat           = creatinina,
+    leucocitos      = globulos_blancos,
+    pcr             = proteina_c_reactiva
+  )
+```
+
+```{r}
+names(covid19_diabetes_2)
+```
+
+*e - Convertimos a valor NA las celdas vacias que tengan algún dato importante*
+
+```{r}
+covid19_diabetes_3 = mutate_if(covid19_diabetes_2, is.character, list(~na_if(.,"")))
+```
+
+*f - Removemos las filas o columnas vacias*
+
+```{r}
+covid19_diabetes_4 = covid19_diabetes_3 |> 
+  remove_empty(which = c("rows", "cols"))
+```
+
+*g - Corrigiendo errores*
+
+```{r}
+library(dplyr)
+library(purrr)
+```
+
+Al ser muchas variables a observar decidimos usar la siguiente función para que nos sea más fácil de distinguir algún error
+
+```{r}
+conteos <- names(covid19_diabetes_4) |> 
+  map(~ covid19_diabetes_4 |> count(!!sym(.x), name = "frecuencia")) 
+```
+
+Identificando las variables con error las mostramos recién con la función count
+
+```{r}
+covid19_diabetes_4 |> count(temperatura)
+covid19_diabetes_4 |> count(puntuacion_plaquetas)
+covid19_diabetes_4 |> count(enf_vascular_periferica)
+```
+
+```{r}
+covid19_diabetes_5 = covid19_diabetes_4 %>%
+  mutate(puntuacion_plaquetas = ifelse(puntuacion_plaquetas == 2, NA, puntuacion_plaquetas))
+```
+
+```{r}
+covid19_diabetes_6 = covid19_diabetes_5 %>%
+  mutate(enf_vascular_periferica = ifelse(enf_vascular_periferica == 2, NA, enf_vascular_periferica))
+```
+
+*h - Transformando valores a valores perdidos usando la función na_if() o case_when()*
+
+```{r}
+covid19_diabetes_7 = covid19_diabetes_6 |> 
+  mutate(temperatura = na_if(temperatura, -17.78))
+```
+
+i - Colapsando niveles de una variable
+
+```{r}
+covid19_diabetes_7 |> count(edad)
+```
+
+```{r}
+covid19_diabetes_8 <- covid19_diabetes_7 %>%
+  mutate(edad = case_when(
+    edad <= 60 ~ "≤60",
+    edad > 60 & edad <= 70 ~ "61-70",
+    edad > 70 & edad <= 80 ~ "71-80",
+    edad > 80 ~ ">80",
+    TRUE ~ NA_character_
+  ))
+
+```
+
+# Exportación del dataset asignado:
+
+```{r}
+write.csv(covid19_diabetes_8, "covid19_diabetes_8.csv", row.names = FALSE)
+```
