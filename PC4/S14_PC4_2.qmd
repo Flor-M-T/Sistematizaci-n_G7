@@ -1,0 +1,383 @@
+---
+title: "S14_PC4_2_G7"
+format: html
+editor: visual
+---
+
+**Instalamos y cargamos los paquetes a usar**
+
+```{r}
+install.packages("mice")
+install.packages("ggmice")
+```
+
+```{r}
+library(mice)
+library(ggmice)
+library(tidyverse)
+library(here)
+library(rio)
+library(gtsummary)
+```
+
+# 1. Datos perdidos en investigación en salud (adaptado a nuestra dataset)
+
+En la investigación en salud es muy común encontrar valores faltantes. Esto ocurre porque, al trabajar con historias clínicas reales, no siempre todas las variables son medidas o registradas: algunos exámenes no se hicieron, ciertas preguntas no se anotaron o simplemente no estaban disponibles al momento de la atención.
+
+En nuestra base de datos, por ejemplo, al revisar las variables observamos que **algunas sí presentan valores faltantes**. Un caso claro es la variable **Saturación_O2** o **Dímero_D** mientras que otras variables como la edad, temperatura, presión arterial media, glucosa, etc., están completas.
+
+En análisis de regresión, la práctica habitual es eliminar a los pacientes que tienen al menos un dato perdido (lo que se conoce como *análisis de casos completos*). Sin embargo, esto puede reducir mucho el tamaño de la muestra y, por lo tanto, disminuir la precisión de los resultados.
+
+# 2 Imputación de datos
+
+Para evitar perder información valiosa, en lugar de eliminar observaciones, se puede usar una técnica llamada **imputación**, que consiste en estimar y reemplazar los valores que faltan.
+
+Antes, se utilizaban métodos simples como reemplazar los valores faltantes con la media. Aunque fáciles de aplicar, estos enfoques pueden distorsionar la variabilidad de los datos.
+
+Hoy en día, la técnica recomendada es la **imputación múltiple**, que genera varias versiones del dataset con valores imputados, reflejando mejor la incertidumbre y proporcionando estimaciones más confiables en los modelos estadísticos.
+
+En esta práctica, utilizaremos imputación múltiple para completar las variables que tienen datos faltantes, especialmente aquellas como **Saturación_O2**, **Dímero_D**, **raza_blanca** o **enfermedades previas**, que presentan datos incompletos.
+
+# 3 El dataset para este ejercicio
+
+Para este ejercicio la base de datos sobre pacientes hospitalizados, incluye información clínica y de laboratorio como: **Duración de hospitalización, Edad, Severidad clínica, Comorbilidades** (diabetes simple o complicada, enfermedad renal, enfermedad cardiovascular, ACV, etc.), **Signos vitales** (temperatura, saturación de O2, presión arterial media), **Biomarcadores y exámenes de laboratorio** (glucosa, dímero D, plaquetas, ferritina, creatinina, IL-6, PCR, troponina, entre otros)
+
+Al revisar la estructura, podemos reconocer que **algunas variables tienen 0 datos faltantes**, mientras que otras presentan pérdidas:
+
+-   Saturación_O2: **44 faltantes**
+
+-   Dímero_D :**12 faltantes**
+
+-   Raza_blanca: **10 faltantes**
+
+-   Enfermedad cardiovascular : **18 faltantes**
+
+-   Otras variables : la mayoría sin valores perdidos
+
+Esta variabilidad en los datos faltantes hace que la imputación múltiple sea una herramienta especialmente útil en este dataset porque permite recuperar la información sin descartar pacientes.
+
+```{r}
+data_sm <- import(here("data", "covid_19_diabetes_incompleto.csv"))
+```
+
+Damos un vistazo a los datos
+
+```{r}
+head(data_sm)
+```
+
+```{r}
+str(data_sm)
+```
+
+# 4 Realizando la imputación de datos
+
+## 4.1 ¿Donde estan los valores perdidos?
+
+Antes de realizar cualquier procedimiento de imputación, es fundamental identificar **en qué variables se encuentran los datos faltantes** y cuántos son. Esto permite decidir qué técnica de imputación aplicar y evaluar la magnitud del problema.
+
+Una forma rápida de hacerlo en R es utilizando las funciones `colSums()` e `is.na()`:
+
+```{r}
+colSums(is.na(data_sm))
+```
+
+Para visualizar mejor dónde se concentran los datos faltantes, podemos usar un mapa de calor con la función `plot_pattern()` del paquete **ggmice**:
+
+```{r}
+data_sm |>
+  select(
+    Saturación_O2,
+    desenla_fallecido,
+    Dímero_D,
+    raza_blanca,
+    enfer_cardiovascular,
+    Glucosa,
+    edad,
+  ) |>
+  ggmice::plot_pattern(
+    square = TRUE,
+    rotate = TRUE
+  )
+```
+
+## 4.2 Comparación de participantes con y sin valores perdidos
+
+Antes de decidir si realmente necesitamos imputar los datos, una buena práctica es comparar cómo se comportan las demás variables entre los pacientes **que sí tienen valores faltantes** y aquellos **que no presentan pérdidas**.
+
+*¿Por qué hacemos esto?*
+
+Porque si ambos grupos son similares en sus características clínicas y de laboratorio, entonces podríamos usar un análisis de casos completos sin preocuparnos por sesgos importantes. En cambio, si vemos diferencias claras, la imputación se vuelve más necesaria para evitar conclusiones equivocadas.
+
+En nuestro caso, podríamos evaluar esta comparación para variables que sí presentan valores faltantes en la base, como **Saturación_O2** y **Dímero_D**. La idea es generar una tabla que compare ambos grupos (con y sin valores perdidos) respecto a variables importantes como edad, severidad, glucosa, comorbilidades, entre otras.
+
+Por ejemplo, para la variable *Saturación_O2* podríamos hacer algo así:
+
+```{r}
+tabla_sat_O = data_sm |> 
+  dplyr::select(
+    edad,
+    desenla_fallecido,
+    Glucosa,
+    Dímero_D,
+    enfer_renal,
+    diabetes_mell_simple,
+    diabetes_mell_complicada,
+    Saturación_O2
+  ) |>
+  mutate(missing = factor(
+    is.na(Saturación_O2),
+    levels = c(FALSE, TRUE),
+    labels = c("Sin valores perdidos", "Con valores perdidos")
+  )) |> 
+  tbl_summary(
+    by = missing,
+    statistic = list(
+      all_continuous()  ~ "{mean} ({sd})",
+      all_categorical() ~ "{n} ({p}%)")
+  ) |> 
+  modify_header(label = "**Variable**",
+                all_stat_cols() ~ "**{level}**<br>N = {n} ({style_percent(p, digits=1)}%)") |> 
+  modify_caption("Características de los pacientes según si tienen valores perdidos en Saturación de O₂") |> 
+  bold_labels()
+```
+
+Y algo similar podríamos hacer para **Dímero_D**:
+
+```{r}
+tabla_dd = data_sm|> 
+  select(
+    edad,
+    desenla_fallecido,
+    Glucosa,
+    Saturación_O2,
+    enfer_renal,
+    diabetes_mell_simple,
+    diabetes_mell_complicada,
+    Dímero_D
+  ) |>
+  mutate(missing = factor(
+    is.na(Dímero_D),
+    levels = c(FALSE, TRUE),
+    labels = c("Sin valores perdidos", "Con valores perdidos")
+  )) |> 
+  tbl_summary(
+    by = missing,
+    statistic = list(
+      all_continuous()  ~ "{mean} ({sd})",
+      all_categorical() ~ "{n} ({p}%)")
+  ) |> 
+  modify_header(label = "**Variable**",
+                all_stat_cols() ~ "**{level}**<br>N = {n} ({style_percent(p, digits=1)}%)") |> 
+  modify_caption("Características de los pacientes según si tienen valores perdidos en Dímero D") |> 
+  bold_labels()
+```
+
+Luego, presentamos ambas comparaciones juntas
+
+```{r}
+tabla <- tbl_merge(
+  tbls = list(tabla_sat_O, tabla_dd),
+  tab_spanner = c("**Saturación O2**", "**Dímero D**")
+)
+```
+
+```{r}
+tabla
+```
+
+Podemos comparar a los pacientes con y sin valores perdidos para ver si existen diferencias importantes. Esto nos sirve para decidir si necesitamos imputar o si podríamos trabajar solo con casos completos.
+
+En nuestro resultado, vemos que los valores perdidos en **Saturación de O₂** y **Dímero D** son pocos. En la mayoría de variables, como severidad, diabetes o enfermedad renal, los grupos son bastante similares. Sin embargo, observamos algunas diferencias puntuales, por ejemplo en los niveles de glucosa, que tienden a ser mayores en los pacientes con datos faltantes.
+
+En general, aunque las diferencias no son demasiado grandes, sí podríamos considerar que la imputación es recomendable para evitar cualquier sesgo, especialmente en el caso de la Saturación de O₂, donde los valores perdidos no parecen ser completamente aleatorios.
+
+## 4.3 ¿Qué variables incluir en la imputación?
+
+Debemos incluir **todas las variables que usarás en tus análisis**, incluso si no tienen valores perdidos. Esto mejora la calidad de la imputación porque el modelo utiliza **toda la información disponible**.\
+
+Además, recordemos que las variables categóricas deben estar como **factor**.
+
+```{r}
+input_data <-
+  data_sm |>
+    dplyr::select(
+      desenla_fallecido,   
+      edad,
+      Glucosa,
+      Saturación_O2,
+      enfer_renal,
+      diabetes_mell_simple,
+      diabetes_mell_complicada,
+      Dímero_D
+    ) |>
+    mutate(
+      enfer_renal = as.factor(enfer_renal),
+      diabetes_mell_simple = as.factor(diabetes_mell_simple),
+      diabetes_mell_complicada = as.factor(diabetes_mell_complicada),
+      desenla_fallecido = as.factor(desenla_fallecido)  
+    )
+```
+
+## 4.4 Imputación de datos con `mice()`
+
+Ahora que ya seleccionamos las variables para el análisis, el siguiente paso es imputar los valores faltantes. Para ello utilizamos la función **`mice()`**, que es una de las herramientas más completas para realizar imputación múltiple.
+
+Recalcar tres puntos importantes que debemos definir dentro de `mice()`:
+
+-   **Cuántas imputaciones vamos a generar (`m`)**\
+    Más imputaciones dan estimaciones más estables. En este caso usamos 20.
+
+-   **Una semilla (`seed`)**\
+    Esto garantiza que, si alguien más corre el código, obtendrá los mismos resultados.
+
+-   **El método de imputación (`method`)**\
+    Aquí indicamos qué técnica usar para cada variable:
+
+    -   **"pmm"** para variables numéricas (por ejemplo: glucosa, dímero D).
+
+    -   **"logreg"** para variables binarias (por ejemplo: enfermedad renal, diabetes).
+
+    -   **""** (comillas vacías) para variables que no tienen valores perdidos.
+
+    Antes de definir esto, siempre revisamos el orden de las variables en el dataset:
+
+```{r}
+names(input_data)
+
+```
+
+Esto es importante porque el argumento `method` debe estar en **el mismo orden** que aparecen las variables dentro de `input_data`.
+
+```{r}
+data_imputada <- mice(
+  input_data,
+  m = 20,
+  method = c(
+    "logreg",   # desenla_fallecido
+    "",        # edad
+    "pmm",     # Glucosa
+    "pmm",     # Saturación_O2
+    "logreg",  # enfer_renal
+    "logreg",  # diabetes_mell_simple
+    "logreg",  # diabetes_mell_complicada
+    "pmm"     # Dímero_D
+    
+  ),
+  maxit = 20,
+  seed = 3,
+  print = FALSE
+)
+```
+
+```{r}
+data_imputada
+
+```
+
+El resultado de la imputación quedó guardado en el objeto `data_imputada`, el cual aparece como un objeto de clase **mids**. En la salida podemos ver los métodos de imputación utilizados: únicamente *Saturación de O₂* y *Dímero D* fueron imputadas con **pmm**, mientras que el resto de variables muestran comillas vacías porque no presentan valores faltantes.
+
+Además, se muestra la **matriz de predictores**, donde se indica qué variables fueron utilizadas para predecir cada una de las que requerían imputación. Esto confirma que el proceso se ejecutó correctamente y que todas las variables relevantes participaron como predictores en el modelo de imputación.
+
+# 5 Analizando los datos imputados
+
+Una vez completado el proceso de imputación, es importante revisar si los valores imputados son razonables comparados con los datos reales. Lo que buscamos es que los valores imputados sean **plausibles** y sigan patrones similares a los valores observados. Esto lo verificamos visualmente con gráficos de caja y bigotes utilizando la función `ggmice()`.
+
+En nuestro caso, las variables continuas imputadas mediante **pmm** fueron:
+
+-   **Saturación de O₂**
+
+-   **Dímero D**
+
+A continuación se muestran los gráficos generados para estas variables.
+
+**Ejemplo: Saturación de O₂**
+
+```{r}
+ggmice(data_imputada, aes(x = .imp, y = Saturación_O2)) +
+  geom_jitter(height = 0, width = 0.25) +
+  geom_boxplot(width = 0.5, size = 1, alpha = 0.55, outlier.shape = NA) +
+  labs(x = "Imputation number")
+```
+
+**Ejemplo: Dímero D**
+
+```{r}
+ggmice(data_imputada, aes(x = .imp, y = Dímero_D)) +
+  geom_jitter(height = 0, width = 0.25) +
+  geom_boxplot(width = 0.5, size = 1, alpha = 0.55, outlier.shape = NA) +
+  labs(x = "Imputation number")
+```
+
+En todos estos gráficos, los datos observados (mostrados en azul, al inicio) se comparan con los valores imputados provenientes de las 20 imputaciones. En todos los casos, los valores imputados se encuentran dentro del rango de los valores reales, lo cual indica que la imputación fue **estable y coherente** con el comportamiento original de cada variable.
+
+### Variables categóricas imputadas
+
+Las variables categóricas imputadas mediante **logreg** fueron:
+
+-   Fallecido
+
+-   enfermedad renal
+
+-   diabetes mellitus simple
+
+-   diabetes mellitus complicada
+
+Para evaluar si la distribución de estas categorías se mantiene estable, convertimos la base imputada a formato *long*:
+
+```{r}
+data_imputada_l <- complete(data_imputada, "long", include = TRUE)
+
+```
+
+Luego creamos una variable que distingue entre valores observados e imputados:
+
+```{r}
+data_imputada_l <- data_imputada_l %>% 
+  mutate(imputed = .imp > 0,
+         imputed = factor(imputed,
+                          levels = c(FALSE, TRUE),
+                          labels = c("Observado", "Imputado")))
+```
+
+Finalmente, comparamos la distribución de una variable categórica. Por ejemplo, **enfermedad renal**:
+
+```{r}
+prop.table(table(data_imputada_l$enfer_renal,
+                 data_imputada_l$imputed),
+           margin = 2)
+```
+
+## 5.1 Procedimientos adicionales luego de la imputación
+
+Una vez obtenidos los datos imputados, el siguiente paso es realizar los análisis estadísticos habituales. Cuando trabajamos con un objeto de clase **mids** (como *data_imputada*), el procedimiento estándar consiste en:
+
+1.  Ajustar el modelo usando la función **with()**, que aplica el análisis a cada una de las imputaciones.
+
+2.  Combinar los resultados mediante **pool()**, obteniendo estimadores consolidados.
+
+Sin embargo, cuando utilizamos el paquete **gtsummary**, este realiza internamente el agrupamiento y la combinación de las imputaciones. Por lo tanto, en este caso basta con usar la función **with()**, y gtsummary se encarga del resto.
+
+un ejemplo adaptado a nuestro análisis, donde ajustamos una **regresión logística** para evaluar factores asociados al desenlace (por ejemplo, severidad o enfermedad renal), utilizando las variables imputadas:
+
+```{r}
+tabla_multi <-
+  data_imputada |> 
+  with(glm(desenla_fallecido ~ edad + Glucosa + Saturación_O2 + 
+             enfer_renal + Dímero_D + diabetes_mell_complicada,  
+           family = binomial(link = "logit"))) |> 
+  tbl_regression(exponentiate = TRUE,
+                 label = list(
+                   edad ~ "Edad (años)",
+                   Glucosa ~ "Glucosa (mg/dL)",
+                   Saturación_O2 ~ "Saturación de O2 (%)",
+                   enfer_renal ~ "Enfermedad renal",
+                   Dímero_D ~ "Dímero D (ng/mL)" ,
+                   diabetes_mell_complicada ~ "Diabetes complicada" )) |>
+  bold_p(t = 0.05) |>
+  modify_header(estimate = "**OR ajustado**", p.value = "**p valor**")
+
+tabla_multi
+```
+
+"El análisis multivariado con datos imputados identificó que **la edad avanzada (especialmente \>80 años)** y **los niveles elevados de Dímero D** son predictores independientes del desenlace. La presencia de enfermedad renal muestra una tendencia hacia mayor riesgo que merece evaluación en estudios con mayor poder estadístico."

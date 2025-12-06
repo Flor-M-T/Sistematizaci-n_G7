@@ -1,0 +1,219 @@
+---
+title: "S13_PC4_1"
+format: html
+editor: visual
+---
+
+# Instalamos y cargamos de paquetes
+
+Para aplicar técnicas de agrupamiento utilizamos paquetes especializados para visualización, manejo de datos y clustering.
+
+```{r}
+install.packages("factoextra")
+install.packages("cluster")
+
+library(factoextra)
+library(cluster)
+library(here)
+library(rio)
+library(tidyverse)
+
+```
+
+# 1. ¿Cómo aplicaremos Machine Learning en esta sesión?
+
+En algunos estudios se recolectan muchas variables clínicas y laboratoriales para cada paciente. Estas variables pueden estar correlacionadas entre sí, generando patrones que no siempre son evidentes a simple vista.\
+
+En lugar de eliminar variables por “redundancia”, podemos aplicar **técnicas de machine learning** como el **agrupamiento (clustering)**.\
+
+Estas permiten identificar grupos de pacientes que comparten características similares sin perder información.
+
+## 1.1 Uso del agrupamiento en investigación en salud
+
+El clustering es una técnica exploratoria que clasifica observaciones (pacientes) en grupos basados en su similitud.\
+Los grupos obtenidos pueden servir para:
+
+-   explorar perfiles clínicos,
+
+-   comparar desenlaces entre grupos (ej. supervivencia),
+
+-   identificar patrones que ayuden a generar hipótesis.
+
+# 2. Agrupamiento jerárquico
+
+## 2.1 Problema
+
+Usaremos un dataset con **160 pacientes en hemodiálisis** y múltiples variables clínicas y bioquímicas.\
+El objetivo del análisis es identificar grupos de pacientes en hemodiálisis con perfiles similares de función renal básica, utilizando técnicas de agrupamiento jerárquico, a partir de tres marcadores clínicos fundamentales: ***creatinina, BUN y volumen de orina.***
+
+## 2.2 Carga del dataset
+
+```{r}
+hemo_data <- import(here("data", "s13_hemodialisis.csv"))
+
+```
+
+**le damos un vistazo:**
+
+```{r}
+str(hemo_data)
+```
+
+## 2.3 Preparación de los datos
+
+### 2.3.1 Selección de variables numérica**s**
+
+Eliminamos variables categóricas, dejamos “id” como identificador y seleccionamos las variables relacionadas con la funcion renal basica
+
+```{r}
+hemo_data_1 <- hemo_data |> 
+  select(id, Creatinina, BUN, Volumen_Urina) |> 
+  column_to_rownames("id")
+```
+
+### 2.3.2 Importancia de estandarizar
+
+Las variables están en diferentes unidades (mg/dL, kg/m², pg/mL, etc.).\
+Si no se estandarizan, variables con valores numéricos grandes dominarán el cálculo de distancias y sesgarán el agrupamiento.
+
+Por eso usamos:
+
+```{r}
+hemo_data_escalado = scale(hemo_data_1)
+```
+
+Un vistazo a los datos antes del escalamiento:
+
+```{r}
+head(hemo_data_1)
+```
+
+y un vistazo después del escalamiento:
+
+```{r}
+head(hemo_data_escalado)
+```
+
+Esto garantiza que todas las variables contribuyan por igual.
+
+# 2.4 Cálculo de distancias
+
+Calculamos distancias euclidianas entre pacientes:
+
+```{r}
+dist_hemo_data <- dist(hemo_data_escalado, method = "euclidean")
+```
+
+**Mapa de calor opcional:**
+
+```{r}
+fviz_dist(dist_hemo_data)
+```
+
+El mapa de calor de distancias muestra la similitud entre los pacientes según creatinina, BUN y volumen urinario. La diagonal representa la auto-comparación. Se observan bloques azulados que indican grupos de pacientes con perfiles renales similares, mientras que las zonas rojizas reflejan diferencias marcadas entre otros pacientes. Esta visualización sugiere la presencia de posibles clusters en la muestra, lo cual justifica aplicar métodos de agrupamiento.
+
+# 2.5 Método de enlace
+
+Usamos el método de **varianza mínima de Ward**, ampliamente recomendado en datos clínicos.
+
+```{r}
+dist_link_hemo_data <- hclust(d = dist_hemo_data, method = "ward.D2")
+```
+
+# 2.6 Dendrograma
+
+```{r}
+fviz_dend(dist_link_hemo_data, cex = 0.7)
+```
+
+Este gráfico muestra cómo se fusionan las observaciones para formar grupos.
+
+# 2.7 ¿Cuántos grupos se forman?
+
+A partir del dendrograma, identificamos **k = 3 clústeres**:
+
+```{r}
+fviz_dend(dist_link_hemo_data, 
+          k = 3,
+          cex = 0.5,
+          k_colors = c("#A1C9F4", "#FFB482", "#8DE5A1"),
+          color_labels_by_k = TRUE, 
+          rect = TRUE)
+```
+
+# 3. Agrupamiento K-Means
+
+K-means agrupa pacientes en K clústeres definidos por sus promedios.
+
+## 3.1 El problema y dataset para este ejercicio
+
+Usaremos el mismo dataset y el mismo problema que el que empleamos en el ejercicio anterior (para Agrupamiento Jerárquico).
+
+## 3.2 Determinación del número óptimo de clústeres
+
+```{r}
+hemo_data_escalado = scale(hemo_data_1)
+```
+
+Usamos el método del (WSS):
+
+```{r}
+fviz_nbclust(hemo_data_escalado, kmeans, nstart = 25, method = "wss") + 
+  geom_vline(xintercept = 3, linetype = 2)
+```
+
+La gráfica de WSS mostró un descenso marcado entre 1 y 3 clústeres, observándose un punto de inflexión claro en k = 3. A partir de este valor la reducción del error es mínima, por lo que se concluye que el número adecuado de clústeres para este conjunto de datos es 3. Este resultado es consistente con la estructura observada en el dendrograma, que también sugiere tres grupos principales**.**
+
+## 3.3 Cálculo del modelo k-means
+
+```{r}
+set.seed(123)
+km_res <- kmeans(hemo_data_escalado, 3, nstart = 25)
+```
+
+```{r}
+km_res
+```
+
+El análisis k-means produjo dos resultados principales:
+
+1.  **Centros o medias de los clústeres (Cluster means):**\
+    Se presenta una matriz donde cada fila corresponde a uno de los tres clústeres identificados y cada columna representa una de las variables utilizadas (creatinina, BUN y volumen urinario). Estos valores resumen el “perfil” promedio de cada grupo y permiten interpretar sus diferencias clínicas.
+
+2.  **Vector de asignación de clúster (Clustering vector):**\
+    Es un vector de longitud igual al número de pacientes; cada elemento contiene un número entero (1, 2 o 3) que indica a qué clúster fue asignado cada individuo. Este vector permite identificar cuántos pacientes pertenecen a cada grupo y evaluar la distribución general de la muestra.
+
+## 3.4 Visualización de los clústeres k-means
+
+Una vez obtenido el número óptimo de clústeres, es posible representar gráficamente cómo se distribuyen los pacientes según los grupos formados. Sin embargo, como el análisis utiliza tres variables (*Creatinina, BUN y Volumen_Urina*), no es posible visualizar simultáneamente las tres en un plano bidimensional (X–Y).
+
+Para resolver esto, se aplica una técnica de reducción de dimensiones: el **Análisis de Componentes Principales (PCA)**. Este método transforma las tres variables originales en dos nuevas dimensiones llamadas *componentes principales*, que capturan la mayor parte de la variabilidad de los datos.
+
+Con estas dos componentes es posible construir un gráfico de dispersión donde cada punto representa a un paciente, y el color indica el clúster asignado por el algoritmo k-means. Para ello, se utiliza la función **`fviz_cluster()`** del paquete **factoextra**, la cual permite visualizar los clústeres usando los resultados del k-means y los datos escalados.
+
+```{r}
+fviz_cluster(
+  km_res,
+  data = hemo_data_escalado,
+  palette = c("#1B9E77", "#D95F02", "#7570B3"),
+  ellipse.type = "euclid",
+  repel = TRUE,
+  ggtheme = theme_minimal()
+)
+```
+
+## Interpretamos
+
+El gráfico muestra la representación de los tres clústeres obtenidos mediante k-means, proyectados en dos componentes principales (Dim1 y Dim2), que juntos explican alrededor del **84.6% de la variabilidad total** (62.9% + 21.7%). Esto significa que la estructura de los datos se preserva bastante bien en el plano, por lo que el gráfico es adecuado para interpretar cómo se distribuyen los grupos.
+
+Cada punto representa a un paciente, y el color corresponde al clúster asignado por el algoritmo. Las elipses muestran la región donde se concentra la mayor parte de los pacientes de cada grupo.
+
+Los tres clústeres obtenidos parecen representar **tres perfiles fisiológicos distintos**:
+
+-   **Clúster 3:** pacientes con función renal relativamente conservada.creatinina y BUN bajos y **volumen de orina elevado**.
+
+-   **Clúster 1:** perfil intermedio . Este clúster reúne pacientes con **valores intermedios** en creatinina y BUN, y niveles promedio de volumen urinario.
+
+-   **Clúster 2:** pacientes con peor función renal y bajo volumen urinario.Este clúster agrupa a los pacientes con **marcadores más altos de daño renal** (creatinina y BUN elevados) y **volumen urinario bajo**, compatible con **oliguria/anuria**.
+
+El gráfico PCA confirma visualmente estas separaciones y respalda la utilidad del k-means para clasificar pacientes según estos parámetros renales.
